@@ -509,8 +509,10 @@ def run_with(
     yLend = yLend[:-1, :]
     t_out = t[:-1]
 
-    # Restore kg/h for methanol in uv (matches upstream plotting block)
-    uv[:, 2] = uv[:, 2] * p.Mm * 3600.0
+    # Note: uv[:, 2] is left in mol/s here; :meth:`Results.in_display_units`
+    # converts to kg/h for plotting/CSV export. Doing the conversion in
+    # only one place avoids the previous double-conversion bug where the
+    # kg/h values ended up 115× too large.
 
     runtime = time.perf_counter() - tic
     if verbose:

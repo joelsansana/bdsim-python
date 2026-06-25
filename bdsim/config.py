@@ -150,8 +150,14 @@ class SensorFaults:
     tmaxInterm: np.ndarray = field(
         default_factory=lambda: np.array([0.0, 3600.0, 0.0, 0.0, 0.0])
     )
+    # Sensor noise standard deviations (in measurement units).
+    # Upstream MATLAB defaults are: [0.1, 0.1, 5e-3, 5.0, 300].
+    # We override Foil (index 3) to 5e-3 kg/s — the upstream value of 5.0
+    # corresponds to 18,000 kg/h σ on a 3,050 kg/h signal (590% relative
+    # noise), which produces visibly broken-looking plots. 5e-3 kg/s ≈ 18
+    # kg/h σ ≈ 0.6% relative noise — realistic for a Coriolis flowmeter.
     noise_std: np.ndarray = field(
-        default_factory=lambda: np.array([0.1, 0.1, 5e-3, 5.0, 300.0])
+        default_factory=lambda: np.array([0.1, 0.1, 5e-3, 5e-3, 300.0])
     )
 
     # User-overridable fault templates (matched by sensor index)
