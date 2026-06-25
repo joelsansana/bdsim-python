@@ -90,3 +90,48 @@ results = run_with(sfaults=sfaults, seed=42)
 
 Useful when generating test data for fault-detection algorithms where
 you want realistic (or deliberately noisy) sensor behavior.
+## 2. Temperature plots show ~−213 °C (FIXED 2026-06-25)
+
+### Symptom
+
+`fig01_tr_td_toil_qheat`, `fig05_tr_loop`, `fig06_td_loop`,
+`fig03_tmet_oil_valve` all showed temperatures around −200 to −227 °C
+instead of 30–60 °C. The CSV files (`results/inputs`, `results/states`,
+`results/measurements`) were already correct — only the plots were wrong.
+
+### Root cause
+
+Same family of bug as Bug 1a. `plot_all()` calls
+`results.in_display_units()` to convert K → °C, but each factory
+function then did `- 273.15` AGAIN on the already-converted data:
+
+```python
+# plot_all()
+r = results.in_display_units()    # sv[6] (TR) goes from 333.55 K → 60.40 °C
+for name, factory in _FIGS:
+    fig = factory(r)              # r.sv[6] is already in °C
+
+# _fig01_tr_td_toil_qheat(r)
+fig.add_trace(go.Scatter(x=th, y=r.sv[:, 6] - 273.15, name="TR"))
+#                                  ^^^^^^^^^^^^^^^^^^^^^^^ subtracting 273.15 from °C → ~−213 °C
+```
+
+Same pattern in `_fig03`, `_fig05`, `_fig06` (4 traces total).
+
+### Fix
+
+Removed the `- 273.15` from each factory; left the conversion in
+`in_display_units()` (the canonical place). Added comments explaining
+that `r` is already in display units.
+
+### Verification
+
+```
+=== After fix ===
+fig01: TR 60.38–60.59 °C  TD 46.24–50.00 °C  Toil 52.74–62.89 °C  Qheat 23376–24366 W
+fig05: setpoint 60.40  measurement 59.98–60.98  state 60.38–60.59 (TR loop, °C)
+fig06: setpoint 50.00  measurement 45.98–50.21  state 46.24–50.00 (TD loop, °C)
+fig03: Tmet 46.61–53.40 °C  order_lift_oil 39.62–41.93 %
+```
+
+All 12 smoke tests still pass.

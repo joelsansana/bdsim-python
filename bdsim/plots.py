@@ -93,15 +93,21 @@ def _save(fig: go.Figure, path: Path) -> Path:
 
 
 def _fig01_tr_td_toil_qheat(r) -> go.Figure:
-    """Figure 1 — TR, TD on left axis; Toil, Qheat on right axis."""
+    """Figure 1 — TR, TD on left axis; Toil, Qheat on right axis.
+
+    Note: ``r`` is already in display units (°C / kg/h / etc.) because
+    :func:`plot_all` calls :meth:`Results.in_display_units` before
+    invoking this factory. Do NOT subtract 273.15 again here — that
+    would give the "−200 °C" double-conversion bug.
+    """
     th = _t_h(r)
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    fig.add_trace(go.Scatter(x=th, y=r.sv[:, 6] - 273.15, name="TR",
+    fig.add_trace(go.Scatter(x=th, y=r.sv[:, 6], name="TR",
                              line=dict(color="red", width=1)), secondary_y=False)
-    fig.add_trace(go.Scatter(x=th, y=r.sv[:, 17] - 273.15, name="TD",
+    fig.add_trace(go.Scatter(x=th, y=r.sv[:, 17], name="TD",
                              line=dict(color="magenta", width=1)), secondary_y=False)
-    fig.add_trace(go.Scatter(x=th, y=r.uv[:, 3] - 273.15, name="Toil",
+    fig.add_trace(go.Scatter(x=th, y=r.uv[:, 3], name="Toil",
                              line=dict(color="blue", width=1)), secondary_y=True)
     fig.add_trace(go.Scatter(x=th, y=r.uv[:, 4], name="Qheat",
                              line=dict(color="green", width=1)), secondary_y=True)
@@ -138,10 +144,13 @@ def _fig02_hh_ydry(r) -> go.Figure:
 
 
 def _fig03_tmet_oil_valve(r) -> go.Figure:
-    """Figure 3 — Tmet on left; oil-valve order on right."""
+    """Figure 3 — Tmet on left; oil-valve order on right.
+
+    ``r`` is already in display units (see :func:`_fig01_tr_td_toil_qheat`).
+    """
     th = _t_h(r)
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-    fig.add_trace(go.Scatter(x=th, y=r.uv[:, 1] - 273.15, name="Tmet",
+    fig.add_trace(go.Scatter(x=th, y=r.uv[:, 1], name="Tmet",
                              line=dict(width=1)), secondary_y=False)
     fig.add_trace(go.Scatter(x=th, y=r.uv[:, 0], name="order_lift_oil",
                              line=dict(width=1)), secondary_y=True)
@@ -180,14 +189,17 @@ def _fig04_h_valve_fmet(r) -> go.Figure:
 
 
 def _fig05_tr_loop(r) -> go.Figure:
-    """Figure 5 — TR loop: setpoint, measurement, state."""
+    """Figure 5 — TR loop: setpoint, measurement, state.
+
+    ``r`` is already in display units (see :func:`_fig01_tr_td_toil_qheat`).
+    """
     th = _t_h(r)
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=th, y=r.sp[:, 0] - 273.15, name="setpoint",
+    fig.add_trace(go.Scatter(x=th, y=r.sp[:, 0], name="setpoint",
                              line=dict(color="black", width=2, dash="dash")))
-    fig.add_trace(go.Scatter(x=th, y=r.pv[:, 0] - 273.15, name="measurement",
+    fig.add_trace(go.Scatter(x=th, y=r.pv[:, 0], name="measurement",
                              line=dict(color="blue", width=1)))
-    fig.add_trace(go.Scatter(x=th, y=r.sv[:, 6] - 273.15, name="state",
+    fig.add_trace(go.Scatter(x=th, y=r.sv[:, 6], name="state",
                              line=dict(color="red", width=1)))
     fig.update_layout(
         title="state & measurement & setpoint",
@@ -201,14 +213,17 @@ def _fig05_tr_loop(r) -> go.Figure:
 
 
 def _fig06_td_loop(r) -> go.Figure:
-    """Figure 6 — TD loop: setpoint, measurement, state."""
+    """Figure 6 — TD loop: setpoint, measurement, state.
+
+    ``r`` is already in display units (see :func:`_fig01_tr_td_toil_qheat`).
+    """
     th = _t_h(r)
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=th, y=r.sp[:, 1] - 273.15, name="setpoint",
+    fig.add_trace(go.Scatter(x=th, y=r.sp[:, 1], name="setpoint",
                              line=dict(color="black", width=2, dash="dash")))
-    fig.add_trace(go.Scatter(x=th, y=r.pv[:, 1] - 273.15, name="measurement",
+    fig.add_trace(go.Scatter(x=th, y=r.pv[:, 1], name="measurement",
                              line=dict(color="blue", width=1)))
-    fig.add_trace(go.Scatter(x=th, y=r.sv[:, 17] - 273.15, name="state",
+    fig.add_trace(go.Scatter(x=th, y=r.sv[:, 17], name="state",
                              line=dict(color="red", width=1)))
     fig.update_layout(
         title="state & measurement & setpoint",
