@@ -44,3 +44,6 @@ results/*.csv
 results/*.html
 results/*.png
 !results/.gitkeep
+
+Fernandes2019_BDSIM.pdf
+manual.pdf
