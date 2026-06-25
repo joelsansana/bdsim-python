@@ -110,8 +110,8 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
     dsvdt = np.zeros(21)
 
     # ------------------- Oil filter
-    lifto = sv[20]
-    r = sv[2 * nc + 7]                                          # index 18 in 0-based
+    lifto = sv[19]
+    r = sv[2 * nc + 6]                                          # index 18 in 0-based (rpores)
     alpha = lifto / 100.0
     Qo = _qoil_jit(r, alpha, K2F, K3F)
     drdt = -K1F * Qo / r
