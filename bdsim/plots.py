@@ -353,7 +353,7 @@ def _save_index(figures: list[tuple[str, go.Figure]], path: Path) -> None:
         "Each figure is also saved as a standalone HTML file in this folder.</p>",
     ]
     for name, fig in figures:
-        parts.append(f'<div class="fig">')
+        parts.append('<div class="fig">')
         parts.append(f"<h2>{name}</h2>")
         # include_plotlyjs='inline' avoids the CDN dependency for offline viewing
         parts.append(fig.to_html(include_plotlyjs="cdn", full_html=False))
