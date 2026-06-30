@@ -164,6 +164,25 @@ class SensorFaults:
     drift_b: dict[int, callable] = field(default_factory=dict)
     bias_b: dict[int, float] = field(default_factory=dict)
 
+    # ------------------------------------------------------------------ #
+    # Live fault knobs (mid-run mutable for the Lepanto FDE integration).
+    # These fields let external code inject faults between ODE steps
+    # without rebuilding the simulator. The dashboard's fault handler
+    # registry writes into these; ``LiveSimulator.step()`` reads them.
+    #
+    # -- ``bias`` : sensor index → additive offset (in measurement units)
+    # -- ``stuck`` : sensor index → sim time at which it became stuck
+    #    (sticky until cleared; held value is the *last published* sample,
+    #    not the last good one — matching what most DCS systems do)
+    # -- ``dropouts`` : set of sensor indices currently outputting NaN/0
+    # All three coexist with the legacy ``a``/``b``/``signal`` path used
+    # by the batch ``run_with()`` driver. The batch path ignores these
+    # fields; the live path reads them.
+    # ------------------------------------------------------------------ #
+    bias: dict[int, float] = field(default_factory=dict)
+    stuck: dict[int, float] = field(default_factory=dict)
+    dropouts: set[int] = field(default_factory=set)
+
 
 # -----------------------------------------------------------------------------
 # Valve faults (stiction)
@@ -291,6 +310,59 @@ class Settings:
     sp4: float = 3000.0                                       # Foil setpoint, kg/h
 
     nic: int = 4                                              # controller update every nic steps
+
+    # ------------------------------------------------------------------ #
+    # Live-mutable setpoints (Roadmap step 4). The ``LiveSimulator`` mirrors
+    # the scalar ``sp1..sp4`` into these on construction; ``POST /control``
+    # writes into them so the PID picks up the change on the next ``nic``
+    # boundary. The mirror is kept in sync — callers should not write to
+    # both.
+    # ------------------------------------------------------------------ #
+    live_sp1: float = 0.0
+    live_sp2: float = 0.0
+    live_sp3: float = 0.0
+    live_sp4: float = 0.0
+
+    def __post_init__(self) -> None:
+        # Always re-sync from the scalar defaults after dataclass init.
+        # The ``live_sp*`` fields exist so external code can mutate them
+        # at runtime; the baseline values come from ``sp1..sp4``.
+        self.live_sp1 = self.sp1
+        self.live_sp2 = self.sp2
+        self.live_sp3 = self.sp3
+        self.live_sp4 = self.sp4
+
+
+# -----------------------------------------------------------------------------
+# Per-step result (live simulator)
+# -----------------------------------------------------------------------------
+
+
+@dataclass
+class StepResult:
+    """Per-step payload returned by :class:`bdsim.simulation.LiveSimulator.step`.
+
+    Mirrors the per-row structure of :class:`Results` but for a single time
+    step. All arrays have the same column shapes as the batched version
+    (``pv`` is ``(nsensors,)``, ``uv`` is ``(6,)``, ``sv`` is ``(21,)``,
+    ``sp`` is ``(4,)``).
+
+    ``quality`` maps sensor-index → OPC-style quality code (``"good"``,
+    ``"bad"``, ``"uncertain"``). It is the public signal for sensor
+    faults (dropout / stuck / bias) so downstream consumers do not need
+    to inspect the sim state directly.
+
+    See :class:`bdsim.simulation.LiveSimulator` for the canonical usage.
+    """
+
+    t: float                                                # sim time at end of step, seconds
+    pv: np.ndarray                                          # measurements, (nsensors,)
+    uv: np.ndarray                                          # input vars,  (6,)
+    sv: np.ndarray                                          # state vars,  (21,)
+    sp: np.ndarray                                          # setpoints,   (4,)
+    quality: dict[int, str] = field(default_factory=dict)   # sensor idx → quality
+    xLend: np.ndarray | None = None                         # washer/dryer output, (6,)
+    yLend: np.ndarray | None = None                         # dryer mass fractions, (6,)
 
 
 # -----------------------------------------------------------------------------

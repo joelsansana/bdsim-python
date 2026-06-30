@@ -24,7 +24,6 @@ Differences from the MATLAB upstream:
 from __future__ import annotations
 
 import time
-from dataclasses import asdict
 
 import numpy as np
 from numba import njit

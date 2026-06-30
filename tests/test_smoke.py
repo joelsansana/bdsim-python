@@ -20,7 +20,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from bdsim import run, run_with
+from bdsim import run_with
 from bdsim.thermo import Qoil, Vmolar, Mmx, cpmx, side_reactions
 from bdsim.kinetics import rxrates
 from bdsim.split_nn import DecanterSplitNet, split
