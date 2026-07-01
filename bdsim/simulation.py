@@ -497,24 +497,48 @@ def run_with(
         u = u_new
         unoiseOLD = unoise
 
-        # ----------------- Layer 2.6: external disturbance overlay
+        # ----------------- Layer 2.6 + Layer 2.7: external disturbance overlay
         # Apply the perturbation kernel: shifts to u[1] (Tmet), u[3]
         # (Toil), and a multiplicative scale on u[4] (Qheat). When
         # all amplitudes are zero (default) we skip the kernel
         # entirely to preserve the legacy byte-identical fingerprint
         # (FP operation ordering matters: even an identity u *= 1.0
         # introduces last-bit drift after Numba-JIT).
+        #
+        # Layer 2.7: operator knob overlays (live_* fields) take
+        # effect here too — the deviation-from-baseline terms must
+        # use the same baseline as the track used to generate
+        # ``amb / cw_t / cw_p``, so we resolve the knobs once at the
+        # top of the conditional. When any knob is non-zero (either
+        # baseline profile or live overlay) the kernel runs.
         if disturbance_track is not None and (
             pfaults.ambient_t_amplitude_k != 0.0
             or pfaults.cw_t_amplitude_k != 0.0
             or pfaults.cw_p_drift_pa_per_h != 0.0
             or pfaults.cw_p_noise_pa != 0.0
+            or pfaults.live_ambient_mean_k is not None
+            or pfaults.live_ambient_amplitude_k is not None
+            or pfaults.live_cw_t_mean_k is not None
+            or pfaults.live_cw_p_drift_pa_per_h is not None
         ):
             amb, cw_t, cw_p = disturbance_track[i - 1, :]
-            # Tmet shifts with CW deviation from baseline.
-            u[1] = u[1] + (cw_t - pfaults.cw_t_mean_k) * pfaults.met_cw_track
-            # Toil shifts with ambient deviation.
-            u[3] = u[3] + (amb - pfaults.ambient_t_mean_k) * pfaults.oil_ambient_track
+            # Layer 2.7: baseline references must match the resolved
+            # means/amps used inside settings.disturbances(). Pull
+            # them once so the deviation math is consistent.
+            amb_mean_resolved = (
+                pfaults.live_ambient_mean_k
+                if pfaults.live_ambient_mean_k is not None
+                else pfaults.ambient_t_mean_k
+            )
+            cw_mean_resolved = (
+                pfaults.live_cw_t_mean_k
+                if pfaults.live_cw_t_mean_k is not None
+                else pfaults.cw_t_mean_k
+            )
+            # Tmet shifts with CW deviation from (resolved) baseline.
+            u[1] = u[1] + (cw_t - cw_mean_resolved) * pfaults.met_cw_track
+            # Toil shifts with ambient deviation from (resolved) baseline.
+            u[3] = u[3] + (amb - amb_mean_resolved) * pfaults.oil_ambient_track
             # Qheat scales with CW pressure (lower pressure = less heat transfer).
             if pfaults.qheat_cw_scaling and pfaults.cw_p_nominal_pa > 0.0:
                 u[4] = u[4] * (cw_p / pfaults.cw_p_nominal_pa)

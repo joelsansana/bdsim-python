@@ -206,6 +206,30 @@ class ProcessFaults:
     cw_pump_ramp_s: float = 30.0                               # ramp-down + ramp-up duration, seconds
     cw_pump_default_duration_s: float = 600.0                 # default trip duration when the FaultSpec doesn't set one
 
+    # ------------------------------------------------------------------
+    # Layer 2.7: operator-driven disturbance knob overlays.
+    #
+    # ``None`` (default) means "use the configured profile value"
+    # (ambient_t_mean_k / ambient_t_amplitude_k / cw_t_mean_k /
+    # cw_p_drift_pa_per_h above). When an operator pushes a new
+    # value through ``LiveSimulator.set_*_knob()``, the field is
+    # written to a float and the kernel reads from there instead.
+    #
+    # All four default to ``None`` so the legacy Layer 2.6
+    # fingerprint is preserved (the kernel reads ``None`` → falls
+    # through to the configured profile value, which is identical
+    # to today's behaviour). Knobs persist for the rest of the run
+    # unless cleared back to ``None``.
+    #
+    # Period fields are NOT knob-overridable here on purpose: the
+    # demo story is "operator tweaks the operating point", not
+    # "operator changes the physics of the weather sinusoid".
+    # ------------------------------------------------------------------
+    live_ambient_mean_k: float | None = None                   # override ambient_t_mean_k
+    live_ambient_amplitude_k: float | None = None             # override ambient_t_amplitude_k
+    live_cw_t_mean_k: float | None = None                     # override cw_t_mean_k
+    live_cw_p_drift_pa_per_h: float | None = None            # override cw_p_drift_pa_per_h
+
 
 # -----------------------------------------------------------------------------
 # Sensor faults
@@ -392,7 +416,7 @@ class Settings:
         d[:, 4] = d[:, 4] + 1000.0 * np.heaviside(t - 100000.0, 1.0)
         return d
 
-    # Layer 2.6: external disturbance channel (lt x 3).
+    # Layer 2.6 + Layer 2.7: external disturbance channel (lt x 3).
     # Returns [Tambient, Twater_cw, Pwater_cw] for every step in the
     # sim horizon. Perturbations from the daily sinusoids + slow
     # drift; the scenario runner can add event-grade perturbations
@@ -400,6 +424,13 @@ class Settings:
     #
     # All components default to constant values when amplitude/drift
     # knobs are zero — preserves byte-identical legacy behaviour.
+    #
+    # Layer 2.7: when an operator pushes a knob override through
+    # ``LiveSimulator.set_*_knob()``, the corresponding
+    # ``pfaults.live_*_mean_k`` / ``live_*_amplitude_k`` /
+    # ``live_cw_p_drift_pa_per_h`` field becomes a float and is used
+    # in place of the underlying profile knob. ``None`` falls through
+    # to the configured profile value (Layer 2.6 default).
     def disturbances(self, t: np.ndarray) -> np.ndarray:
         pfaults = self._pfaults                  # injected by Simulation during build
         if pfaults is None:
@@ -411,21 +442,43 @@ class Settings:
                 np.full(len(t), 288.15),
                 np.full(len(t), 4.0e5),
             ])
+        # Layer 2.7: resolve operator-driven knob overlays onto the
+        # baseline profile knobs. Read-once here so the kernel stays
+        # a single read per attribute per step.
+        amb_mean = (
+            pfaults.live_ambient_mean_k
+            if pfaults.live_ambient_mean_k is not None
+            else pfaults.ambient_t_mean_k
+        )
+        amb_amp = (
+            pfaults.live_ambient_amplitude_k
+            if pfaults.live_ambient_amplitude_k is not None
+            else pfaults.ambient_t_amplitude_k
+        )
+        cw_mean = (
+            pfaults.live_cw_t_mean_k
+            if pfaults.live_cw_t_mean_k is not None
+            else pfaults.cw_t_mean_k
+        )
+        cw_drift = (
+            pfaults.live_cw_p_drift_pa_per_h
+            if pfaults.live_cw_p_drift_pa_per_h is not None
+            else pfaults.cw_p_drift_pa_per_h
+        )
         amb = (
-            pfaults.ambient_t_mean_k
-            + pfaults.ambient_t_amplitude_k
+            amb_mean
+            + amb_amp
             * np.sin(2.0 * np.pi * t / pfaults.ambient_t_period_s)
         )
         cw_t = (
-            pfaults.cw_t_mean_k
+            cw_mean
             + pfaults.cw_t_amplitude_k
             * np.sin(2.0 * np.pi * t / pfaults.cw_t_period_s)
         )
         # CW pressure: nominal + signed drift over time + jitter.
-        # ``cw_p_drift_pa_per_h`` carries its own sign: positive
-        # drifts pressure up, negative drifts it down. Operators
-        # expect drift to be negative when cooling-water pumps wear.
-        drift_pa = pfaults.cw_p_drift_pa_per_h * t
+        # Drift knob is the only override-prone parameter; the
+        # override uses ``cw_drift`` resolved above.
+        drift_pa = cw_drift * t
         if pfaults.cw_p_noise_pa > 0.0:
             jitter = pfaults.cw_p_noise_pa * np.random.randn(len(t))
         else:
