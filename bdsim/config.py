@@ -174,6 +174,26 @@ class ProcessFaults:
     lab_noise_water: float = 20.0                              # ppm absolute
     lab_noise_iv: float = 1.0                                  # g I2/100g absolute
 
+    # ---- Layer 2.6: external disturbances ----
+    # All default to zero amplitude / zero drift so the legacy
+    # fingerprint is preserved when disturbance_profile is left at
+    # defaults (the perturbation kernel adds 0 to every channel).
+    ambient_t_mean_k: float = 293.15                           # 20 °C baseline
+    ambient_t_amplitude_k: float = 0.0                         # daily sinusoid amplitude, K
+    ambient_t_period_s: float = 24.0 * 3600.0                  # 24 h period
+    cw_t_mean_k: float = 288.15                                # 15 °C cooling-water inlet baseline
+    cw_t_amplitude_k: float = 0.0                              # seasonal sinusoid amplitude, K
+    cw_t_period_s: float = 7.0 * 24.0 * 3600.0                 # 7-day period (slow)
+    cw_p_nominal_pa: float = 4.0e5                             # 4 bar nominal CW pressure
+    cw_p_drift_pa_per_h: float = 0.0                           # slow drift, Pa/h
+    cw_p_noise_pa: float = 0.0                                 # small jitter (1σ), Pa
+    # Mapping coefficients (linear first-order model). Defaults to 1.0
+    # so 0-amplitude disturbance profile produces byte-identical
+    # legacy behavior.
+    met_cw_track: float = 0.3                                  # Tmet shift per K of CW deviation
+    oil_ambient_track: float = 0.7                             # Toil shift per K of ambient deviation
+    qheat_cw_scaling: bool = True                              # Qheat *= Pwater_cw / cw_p_nominal_pa
+
 
 # -----------------------------------------------------------------------------
 # Sensor faults
@@ -360,6 +380,53 @@ class Settings:
         d[:, 4] = d[:, 4] + 1000.0 * np.heaviside(t - 100000.0, 1.0)
         return d
 
+    # Layer 2.6: external disturbance channel (lt x 3).
+    # Returns [Tambient, Twater_cw, Pwater_cw] for every step in the
+    # sim horizon. Perturbations from the daily sinusoids + slow
+    # drift; the scenario runner can add event-grade perturbations
+    # on top of this baseline (power_dip, cw_pump_trip).
+    #
+    # All components default to constant values when amplitude/drift
+    # knobs are zero — preserves byte-identical legacy behaviour.
+    def disturbances(self, t: np.ndarray) -> np.ndarray:
+        pfaults = self._pfaults                  # injected by Simulation during build
+        if pfaults is None:
+            # Fallback: zero-amplitude profile. Callers without
+            # pfaults binding get a constant nominal disturbance
+            # profile (Tambient = 293.15 K, etc).
+            return np.column_stack([
+                np.full(len(t), 293.15),
+                np.full(len(t), 288.15),
+                np.full(len(t), 4.0e5),
+            ])
+        amb = (
+            pfaults.ambient_t_mean_k
+            + pfaults.ambient_t_amplitude_k
+            * np.sin(2.0 * np.pi * t / pfaults.ambient_t_period_s)
+        )
+        cw_t = (
+            pfaults.cw_t_mean_k
+            + pfaults.cw_t_amplitude_k
+            * np.sin(2.0 * np.pi * t / pfaults.cw_t_period_s)
+        )
+        # CW pressure: nominal + signed drift over time + jitter.
+        # ``cw_p_drift_pa_per_h`` carries its own sign: positive
+        # drifts pressure up, negative drifts it down. Operators
+        # expect drift to be negative when cooling-water pumps wear.
+        drift_pa = pfaults.cw_p_drift_pa_per_h * t
+        if pfaults.cw_p_noise_pa > 0.0:
+            jitter = pfaults.cw_p_noise_pa * np.random.randn(len(t))
+        else:
+            jitter = 0.0
+        cw_p = pfaults.cw_p_nominal_pa + drift_pa + jitter
+        return np.column_stack([amb, cw_t, cw_p])
+
+    # Internal binding: ``Simulation._setup`` patches this with the
+    # active ``ProcessFaults`` so ``disturbances(t)`` can read the
+    # knobs. Public API is still ``Settings.disturbances(t)`` so
+    # callers don't need to thread pfaults through every call.
+    _pfaults = None
+
     # Loop wiring (1-based in upstream; converted to 0-based at Simulation build time)
     mode_1b: np.ndarray = field(default_factory=lambda: np.array([1, 0, 1, 1]))
     pvindex_1b: np.ndarray = field(default_factory=lambda: np.array([1, 2, 3, 4]))
@@ -427,6 +494,7 @@ class StepResult:
     sp: np.ndarray                                          # setpoints,   (4,)
     quality: dict[int, str] = field(default_factory=dict)   # sensor idx → quality
     quality_latched: np.ndarray | None = None               # lab-cycle latched values, (3,) when quality_state=True
+    disturbances: np.ndarray | None = None                  # Layer 2.6: (3,) [Tamb, Tcw, Pcw]; None when off
     xLend: np.ndarray | None = None                         # washer/dryer output, (6,)
     yLend: np.ndarray | None = None                         # dryer mass fractions, (6,)
 
@@ -454,6 +522,8 @@ class Results:
     tclean: np.ndarray                                        # filter cleaning times, s
     quality: np.ndarray | None = None                         # latched lab samples, (lt-1, 3): [FAME%, water ppm, IV]
                                                               # Layer 2.1 — present when quality_state=True; NaN rows otherwise
+    disturbances: np.ndarray | None = None                    # Layer 2.6: external disturbance track,
+                                                              # (lt-1, 3): [Tamb_K, Tcw_K, Pcw_Pa].
 
     # Display-unit conversions (matching upstream's final plotting block)
     def in_display_units(self) -> "Results":
