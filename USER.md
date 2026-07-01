@@ -1,0 +1,190 @@
+# USER.md — bdsim
+
+You, the developer or researcher, want to use bdsim. This is the on-ramp.
+
+## Who you probably are
+
+- A **data scientist** building fault-detection models on plant trajectories. You want clean, reproducible batch runs with `np.random.seed(seed)` and pinned fingerprints.
+- A **control engineer** tuning the PID loops. You want to sweep `Settings.live_sp1..4` and see how `TR-101` / `FICA-401` respond.
+- A **dashboard / app developer** driving a real-time UI. You want `LiveSimulator` and `StepResult` to deliver one sample at a time without surprises.
+- A **demo / training person** writing a scenario script. You want to inject a fault at sim_t=600s and watch the response.
+
+## Quick start (5 minutes)
+
+```python
+# Batch run, default upstream settings, reproducible
+from bdsim import run_with
+res = run_with(seed=42)
+print(res.t.shape, res.sv.shape, res.pv.shape)   # (51999,) (51999, 21) (51999, 5)
+print(res.t[0], res.t[-1])                       # 0.0, 259980.0 (72h)
+```
+
+```python
+# Live step-by-step
+from bdsim import LiveSimulator
+from bdsim.config import Settings, ProcessFaults
+sim = LiveSimulator(settings=Settings(), seed=42, pfaults=ProcessFaults())
+while not sim.done:
+    sample = sim.step()
+    print(sample.t, sample.pv)
+```
+
+```python
+# Inject a fault mid-run
+from bdsim import LiveSimulator
+from bdsim.config import Settings, ProcessFaults, SensorFaults
+sim = LiveSimulator(settings=Settings(), seed=42, pfaults=ProcessFaults())
+# Pre-bias TR-101 by +5 K for the rest of the run
+sim.sensor_faults.bias[0] = 5.0
+while not sim.done:
+    sim.step()
+```
+
+## Common tasks
+
+### Run a reproducible batch experiment
+
+```python
+import numpy as np
+from bdsim import run_with
+from bdsim.config import ProcessFaults
+
+pf = ProcessFaults(
+    fouling_dynamic=True,        # Layer 2.5: HEX fouling as ODE state
+    quality_state=True,           # Layer 2.1: latched QA measurements
+    cw_p_drift_pa_per_h=-50.0,    # Layer 2.6: slow CW pressure drift
+)
+res = run_with(pfaults=pf, seed=42, verbose=False)
+np.savez("experiment_01.npz", t=res.t, sv=res.sv, pv=res.pv, uv=res.uv, disturbances=res.disturbances)
+```
+
+`res.disturbances` is `(51999, 3)` columns `[Tamb_K, Tcw_K, Pcw_Pa]` (or `None` if no disturbance amplitudes set).
+
+### Run a quality-latched experiment (Layer 2.1)
+
+```python
+from bdsim import LiveSimulator
+from bdsim.config import ProcessFaults
+
+# quality_state=True: the QA-101/102/103 measurements are latched
+# at the lab-cycle rate (1 hour default), with realistic noise. The
+# state vector widens to 25 components (was 21/22).
+sim = LiveSimulator(
+    pfaults=ProcessFaults(quality_state=True, fouling_dynamic=True),
+    seed=42,
+)
+while not sim.done:
+    s = sim.step()
+    if s.quality_latched is not None:
+        print(s.t, s.quality_latched)         # [FAME%, water_ppm, IV]
+```
+
+### Trigger a cw_pump_trip mid-run (Layer 2.6b)
+
+```python
+from bdsim import LiveSimulator
+from bdsim.config import ProcessFaults
+
+# Layer 2.6 ambient/cw knobs must be set for the kernel to apply
+# the override. If amplitudes are zero the published PCW snapshot
+# still drops (operator visibility) but the ODE perturbation path
+# is skipped.
+sim = LiveSimulator(
+    pfaults=ProcessFaults(
+        fouling_dynamic=True,
+        quality_state=False,
+        ambient_t_amplitude_k=2.0,        # nonzero so the kernel runs
+        cw_t_amplitude_k=1.0,
+    ),
+    seed=42,
+)
+# Fire the trip at sim_t=600s, hold 300s, recover
+sim._disturbance_override = {
+    "channel": "pcw",
+    "start_t": 600.0,
+    "end_t": 900.0,
+    "low_factor": 0.3,                   # 70% pressure drop
+    "ramp_s": 30.0,
+}
+while not sim.done:
+    s = sim.step()
+    print(s.t, s.disturbances[2] / 1e5)  # PCW in bar
+```
+
+### Read the live disturbance track
+
+```python
+sim = LiveSimulator(
+    pfaults=ProcessFaults(
+        ambient_t_amplitude_k=8.0, cw_t_amplitude_k=4.0,
+    ),
+    seed=42,
+)
+sim.step()                                # initial sample
+print(sim._disturbance_track[:5])        # (5, 3) [Tamb_K, Tcw_K, Pcw_Pa]
+```
+
+## API reference (essentials)
+
+### `run_with(settings, pfaults, sfaults, vfaults, armax, pid, seed, verbose) -> Results`
+
+Batch driver. Runs the full 72h sim in ~60s (Numba JIT). Returns `Results` with `t, sv, pv, uv, sp, quality, disturbances, ...`.
+
+### `LiveSimulator(settings, pfaults, seed, ...) -> LiveSimulator`
+
+Stateful, per-step driver. The dashboard uses this. Has the same `ProcessFaults` knobs but additionally supports mid-run mutation of `sensor_faults`, `valve_faults`, and (Layer 2.6b) `sim._disturbance_override`.
+
+### `StepResult` (live only)
+
+```python
+@dataclass
+class StepResult:
+    t: float                        # sim time, seconds
+    i: int                          # step index
+    sv: np.ndarray                  # state vector
+    pv: np.ndarray                  # sensor values (with bias/dropout/stuck applied)
+    uv: np.ndarray                  # inputs
+    sp: np.ndarray                  # setpoints
+    quality: dict[int, str]         # sensor index → "good"/"uncertain"/"bad"
+    quality_latched: np.ndarray | None  # Layer 2.1 latched QA values
+    disturbances: np.ndarray | None     # Layer 2.6 [Tamb_K, Tcw_K, Pcw_Pa]
+    xLend: np.ndarray
+    yLend: np.ndarray
+```
+
+### `ProcessFaults` (the main config block)
+
+```python
+@dataclass
+class ProcessFaults:
+    fouling: int = 1                  # 0/1 — pre-Layer 2.5 fouling (constant)
+    fouling_dynamic: bool = False     # Layer 2.5 — α evolves as an ODE state
+    quality_state: bool = False       # Layer 2.1 — latched QA measurements
+    quality_lag_mode: str = "fixed"   # "fixed" / "exponential" / "normal"
+    ambient_t_amplitude_k: float = 0  # Layer 2.6 ambient sinusoid
+    cw_t_amplitude_k: float = 0       # Layer 2.6 CW temperature sinusoid
+    cw_p_drift_pa_per_h: float = 0    # Layer 2.6 CW pressure slow drift
+    cw_p_noise_pa: float = 0          # Layer 2.6 CW pressure noise (1σ)
+    met_cw_track: float = 0.3
+    oil_ambient_track: float = 0.7
+    qheat_cw_scaling: bool = True
+    cw_pump_low_factor: float = 0.3   # Layer 2.6b trip pressure floor
+    cw_pump_ramp_s: float = 30.0      # Layer 2.6b trip ramp duration
+    cw_pump_default_duration_s: float = 600.0
+```
+
+## Common gotchas
+
+- **The state vector widens when you turn on Layer 2.5 or 2.1.** `sv.shape` is 21 (default), 22 (Layer 2.5), or 25 (Layer 2.5 + 2.1). If you trained a model on the 21-wide vector, you have to re-train.
+- **`res.disturbances` is `None` unless you set disturbance amplitudes.** The kernel skips the path entirely when all amplitudes are zero (legacy byte-identical contract). Set at least one to nonzero.
+- **Live path and batch path have different fingerprints** even at the same seed. The Layer 2.6 fingerprint `sv=6f61eb53...` is the **batch** baseline. The live baseline is `sv=f37fb5e0...`. Both are pinned.
+- **`LiveSimulator.t` raises IndexError after the run completes** if you haven't installed the post-run fix (`v0.4.1+`). It returns `settings.tf` instead. The dashboard depends on this — make sure your install is current.
+- **Numba caches are in `__pycache__/`** and `bdsim/*.nbi`. After major kernel changes, delete the cache: `find . -name "*.nbi" -delete && find . -name "__pycache__" -exec rm -rf {} +`.
+
+## Where to look next
+
+- `tests/test_smoke.py` — minimal usage examples
+- `bdsim/live_simulator.py` — the live driver with extensive docstrings
+- `bdsim/config.py` — every config dataclass, heavily commented
+- `NOTES.md` — historical: upstream-faithful bugs we found and fixed
+- `~/Documents/Notas/Lepanto/BDSIM_Roadmap.md` — strategic roadmap
