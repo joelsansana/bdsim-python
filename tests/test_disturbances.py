@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import hashlib
 import numpy as np
-import pytest
 
 from bdsim.config import ProcessFaults, Settings
 from bdsim.live_simulator import LiveSimulator
