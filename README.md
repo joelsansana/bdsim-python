@@ -5,6 +5,8 @@ A Python port of the BDSIM MATLAB/Octave simulator by Natércia C. P. Fernandes
 (filter → reactor → heat exchanger → decanter → washer → dryer) with sensors,
 PID controllers, valve stiction, and a decanter split neural network.
 
+**Current version: 1.1.0** (`bdsim/__init__.py:__version__`, mirrored in `pyproject.toml`). A fingerprint bump always requires a version bump — see `AGENTS.md` for the rule.
+
 The port is faithful to the MATLAB semantics and uses modern Python idioms:
 
 - **NumPy** for vectorised math

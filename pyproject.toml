@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bdsim"
-version = "0.4.0"
+version = "1.1.0"
 description = "Biodiesel Process Simulator — Python port of Natércia Fernandes' BDSIM (Coimbra, 2019). Used as the OT sand table for Lepanto fault-detection R&D."
 readme = "README.md"
 requires-python = ">=3.10"
