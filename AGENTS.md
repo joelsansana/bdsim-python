@@ -43,7 +43,9 @@ tests/
 ├── test_smoke.py            # 12 smoke tests, fingerprint regression
 ├── test_live_simulator.py   # LiveSimulator + byte-identical contract to run_with
 ├── test_disturbances.py     # Layer 2.6 external disturbance track
-└── test_layer26b_cw_pump.py # Layer 2.6b cw_pump_trip mid-run override
+├── test_layer24_degradation.py # Layer 2.4 pump_health + valve_stiction_pct
+├── test_layer26b_cw_pump.py # Layer 2.6b cw_pump_trip mid-run override
+└── test_layer27_knobs.py    # Layer 2.7 operator-driven disturbance knobs
 
 results/                # default output dir (created on first run)
 docs/                   # Fernandes 2019 PDF + manual PDF (upstream refs)
@@ -70,9 +72,8 @@ NOTES.md                # historical: upstream-faithful bugs we found and fixed
 See `~/Documents/Notas/Lepanto/BDSIM_Roadmap.md` for the authoritative roadmap. This repo's coverage:
 
 - ✅ Step 1 (live sim driver), Step 2 (MQTT publish is on the dashboard side), Step 4 (live fault injection), Step 5 (sensor failure modes), Step 8 (scenario runner is on the dashboard side)
-- ✅ Layer 2.1 (quality latching — `quality_state=True` mode), Layer 2.5 (HEX fouling as continuous state, `fouling_dynamic=True` mode), Layer 2.6 (external disturbances), Layer 2.6b (cw_pump_trip mid-run override)
-- ⏳ Layer 2.7 (operator-driven disturbance schedule) — pending
-- ⏳ Layer 2 (remaining) — pending Joel's review
+- ✅ Layer 2.1 (quality latching — `quality_state=True` mode), Layer 2.5 (HEX fouling as continuous state, `fouling_dynamic=True` mode), Layer 2.6 (external disturbances), Layer 2.6b (cw_pump_trip mid-run override), Layer 2.7 (operator-driven disturbance schedule), Layer 2.4 (pump_health + valve_stiction_pct as continuous state — `pump_wear=True` / `valve_wear=True`)
+- ⏳ Layer 2.1 `quality_latched` code review (Joel owes) — pending
 
 ## Coordination with bdsim-dashboard
 
