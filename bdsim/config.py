@@ -413,6 +413,10 @@ class StepResult:
     faults (dropout / stuck / bias) so downstream consumers do not need
     to inspect the sim state directly.
 
+    ``quality_latched`` is the lab-cycle latched measurement payload
+    (Layer 2.1). Shape ``(3,)`` with ``[FAME%, water_ppm, IV]``. Empty
+    array when ``ProcessFaults.quality_state`` is False.
+
     See :class:`bdsim.simulation.LiveSimulator` for the canonical usage.
     """
 
@@ -422,6 +426,7 @@ class StepResult:
     sv: np.ndarray                                          # state vars,  (22,) — includes HEX fouling α at [21]
     sp: np.ndarray                                          # setpoints,   (4,)
     quality: dict[int, str] = field(default_factory=dict)   # sensor idx → quality
+    quality_latched: np.ndarray | None = None               # lab-cycle latched values, (3,) when quality_state=True
     xLend: np.ndarray | None = None                         # washer/dryer output, (6,)
     yLend: np.ndarray | None = None                         # dryer mass fractions, (6,)
 

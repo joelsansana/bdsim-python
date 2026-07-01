@@ -499,6 +499,7 @@ class LiveSimulator:
             sv=self._sv[0, :].copy(),
             sp=self._sp[0, :].copy(),
             quality=quality,
+            quality_latched=self._quality_latched[0, :].copy() if self._use_quality_state else None,
             xLend=self._xLend[0, :].copy(),
             yLend=self._yLend[0, :].copy(),
         )
@@ -626,6 +627,7 @@ class LiveSimulator:
             sv=self._sv[i, :].copy(),
             sp=self._sp[i, :].copy(),
             quality=quality,
+            quality_latched=self._quality_latched[i, :].copy() if self._use_quality_state else None,
             xLend=self._xLend[i, :].copy(),
             yLend=self._yLend[i, :].copy(),
         )
