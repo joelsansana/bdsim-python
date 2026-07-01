@@ -116,16 +116,23 @@ def test_split_net_freeze_pretrained():
 # ---------------------------------------------------------------------------
 
 def test_smoke_run():
-    """Default-settings short-horizon simulation completes and produces sane trajectories."""
-    from bdsim.config import Settings
+    """Default-settings short-horizon simulation completes and produces sane trajectories.
+
+    Uses ``fouling_dynamic=False`` so the legacy 21-component state
+    vector is exercised — this is the regression path that should
+    match the upstream baseline bit-for-bit. See ``test_smoke_run_dynamic``
+    for the new HEX-fouling dynamics (Roadmap Layer 2.5).
+    """
+    from bdsim.config import Settings, ProcessFaults
+    pfaults = ProcessFaults(fouling_dynamic=False)
     settings = Settings(ti=0.0, tf=10_000.0, dt=5.0)
-    res = run_with(settings=settings, seed=42, verbose=False)
+    res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
 
     # Time vector
     assert res.t[0] == 0.0
     assert res.t[-1] > 0.0
 
-    # State trajectory shape
+    # State trajectory shape — legacy 21 components
     assert res.sv.shape[1] == 21
     assert res.uv.shape[1] == 6
     assert res.pv.shape[1] == 5
@@ -150,13 +157,49 @@ def test_smoke_run():
 
 
 def test_smoke_run_with_seed_is_deterministic():
-    """Same seed → same trajectories (short horizon)."""
-    from bdsim.config import Settings
+    """Same seed → same trajectories (short horizon, legacy mode)."""
+    from bdsim.config import Settings, ProcessFaults
+    pfaults = ProcessFaults(fouling_dynamic=False)
     settings = Settings(ti=0.0, tf=5_000.0, dt=5.0)
-    r1 = run_with(settings=settings, seed=123, verbose=False)
-    r2 = run_with(settings=settings, seed=123, verbose=False)
+    r1 = run_with(settings=settings, pfaults=pfaults, seed=123, verbose=False)
+    r2 = run_with(settings=settings, pfaults=pfaults, seed=123, verbose=False)
     np.testing.assert_array_equal(r1.sv, r2.sv)
     np.testing.assert_array_equal(r1.pv, r2.pv)
+
+
+def test_smoke_run_dynamic_22_state_components():
+    """Dynamic mode (Roadmap Layer 2.5) extends the state vector to 22.
+
+    sv[21] holds the HEX fouling factor α ∈ [0, 1]. At default operating
+    conditions α grows slowly (Arrhenius accumulation vs. linear decay)
+    — for a 10 000 s run we expect α > initial 0.05 and α < 0.5.
+    """
+    from bdsim.config import Settings, ProcessFaults
+    pfaults = ProcessFaults(fouling_dynamic=True)
+    settings = Settings(ti=0.0, tf=10_000.0, dt=5.0)
+    res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
+
+    assert res.sv.shape[1] == 22
+    # α starts at 0.05 and grows (Arrhenius at reactor T)
+    alpha = res.sv[:, 21]
+    assert alpha[0] == pytest.approx(0.05)
+    assert np.all(alpha >= 0.0)
+    assert np.all(alpha <= 1.0)
+    assert alpha[-1] > 0.05                                  # α climbed
+    assert alpha[-1] < 0.5                                   # slow fouling at default conditions
+
+
+def test_smoke_run_dynamic_clamps_alpha_on_cleaning():
+    """A cleaning event snaps α to alpha_clean (0.1) and clamps it in [0, 1]."""
+    from bdsim.config import Settings, ProcessFaults
+    pfaults = ProcessFaults(fouling_dynamic=True)
+    settings = Settings(ti=0.0, tf=500.0, dt=5.0)
+    res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
+    alpha = res.sv[:, 21]
+    # No cleaning should fire in 500 s (DP_clean = 1e5, far above
+    # initial DP), but α should still be clamped.
+    assert np.all(alpha >= 0.0)
+    assert np.all(alpha <= 1.0)
 
 
 def test_smoke_run_no_clogging():

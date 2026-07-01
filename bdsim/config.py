@@ -93,6 +93,18 @@ class Parameters:
     K3F: float = 0.0
     K4F: float = 0.0
 
+    # ---- HEX fouling dynamics (Roadmap Layer 2.5) -------------------------
+    # α is a continuous state in sv[21]. dα/dt has two terms:
+    #   accumulation: k_f0 * FFA_factor(T) * exp(-E_a_f / (R * TR))
+    #   decay:        k_decay * α
+    # Sane defaults give α ∈ [~0.05, ~0.7] over a 72 h horizon at the
+    # default operating point. See bdsim/ode.py:_ode_rhs_jit for application.
+    k_f0: float = 2.5e-4                                      # base deposition rate, 1/s
+    E_a_f: float = 1.8e4                                      # activation energy, J/mol
+    k_decay: float = 5.0e-7                                   # self-cleaning decay, 1/s
+    ffa_ref: float = 0.05                                     # reference FFA fraction (dimensionless)
+    alpha_clean: float = 0.1                                  # snap value on cleaning event
+
     def finalize(self) -> None:
         """Recompute derived quantities that depend on M and ro."""
         self.vmol = self.M / self.ro
@@ -118,6 +130,9 @@ class ProcessFaults:
     ratio_robs_r: float = 0.9
     fouling: int = 1                                           # 0 off, 1 on
     foulingpar: np.ndarray = field(default_factory=lambda: np.array([3e-7]))
+    fouling_dynamic: bool = True                              # Layer 2.5: α evolves as a state when True
+                                                              # When False, behaviour matches the legacy
+                                                              # pre-baked series (factor = 1/(1 + Rf)).
 
 
 # -----------------------------------------------------------------------------
@@ -272,7 +287,13 @@ class Settings:
     tf: float = 260000.0
     dt: float = 5.0
 
-    # Initial state vector (21 components)
+    # Initial state vector (21 components by default; 22 when HEX fouling is dynamic)
+    #
+    # Legacy mode (pfaults.fouling_dynamic=False): exactly 21 components,
+    # byte-identical to the upstream baseline. The driver ignores sv[21].
+    # Dynamic mode (pfaults.fouling_dynamic=True): sv0 grows to 22
+    # components, with α at [21] initialised to 0.05 (lightly fouled).
+    # The driver chooses the right shape at construction time.
     sv0: np.ndarray = field(default_factory=lambda: np.array([
         # Reactor composition + temperature
         0.002455, 0.000553, 4.67e-05, 0.42353, 0.43022, 0.14319, 60.4 + 273.15,
@@ -358,7 +379,7 @@ class StepResult:
     t: float                                                # sim time at end of step, seconds
     pv: np.ndarray                                          # measurements, (nsensors,)
     uv: np.ndarray                                          # input vars,  (6,)
-    sv: np.ndarray                                          # state vars,  (21,)
+    sv: np.ndarray                                          # state vars,  (22,) — includes HEX fouling α at [21]
     sp: np.ndarray                                          # setpoints,   (4,)
     quality: dict[int, str] = field(default_factory=dict)   # sensor idx → quality
     xLend: np.ndarray | None = None                         # washer/dryer output, (6,)
@@ -380,7 +401,7 @@ class Results:
 
     t: np.ndarray                                            # seconds
     uv: np.ndarray                                            # input vars,  (lt-1, 6)
-    sv: np.ndarray                                            # state vars,  (lt-1, 21)
+    sv: np.ndarray                                            # state vars,  (lt-1, 22) — includes HEX fouling α at [21]
     pv: np.ndarray                                            # measurements, (lt-1, 5)
     sp: np.ndarray                                            # setpoints,   (lt-1, 4)
     xLend: np.ndarray                                         # light-phase end comp, (lt-1, 6)

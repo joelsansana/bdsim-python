@@ -43,12 +43,15 @@ def test_run_to_completion_matches_run_with_byte_for_byte() -> None:
 
     The regression contract for the step 4 refactor: extracting the
     per-step loop into a stateful class must not perturb the math, the
-    RNG sequence, or the array shapes.
+    RNG sequence, or the array shapes. Exercises the **legacy** HEX
+    fouling path (``fouling_dynamic=False``) for upstream parity.
     """
+    from bdsim.config import ProcessFaults
     settings = _make_short_settings()
+    pfaults = ProcessFaults(fouling_dynamic=False)
 
-    res_batch = run_with(settings=settings, seed=42, verbose=False)
-    sim = LiveSimulator(settings=settings, seed=42)
+    res_batch = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
+    sim = LiveSimulator(settings=settings, pfaults=pfaults, seed=42)
     res_live = sim.run_to_completion(verbose=False)
 
     assert res_batch.sv.shape == res_live.sv.shape
@@ -72,10 +75,12 @@ def test_run_to_completion_matches_run_with_byte_for_byte() -> None:
 def test_run_with_long_horizon_matches_live() -> None:
     """The full 260 000 s horizon (default upstream) must also stay
     byte-identical. This is the regression contract for the smoke test
-    fingerprint hashes.
+    fingerprint hashes. Exercises the **legacy** HEX fouling path.
     """
-    res_batch = run_with(seed=42, verbose=False)
-    sim = LiveSimulator(seed=42)
+    from bdsim.config import ProcessFaults
+    pfaults = ProcessFaults(fouling_dynamic=False)
+    res_batch = run_with(pfaults=pfaults, seed=42, verbose=False)
+    sim = LiveSimulator(pfaults=pfaults, seed=42)
     res_live = sim.run_to_completion(verbose=False)
 
     np.testing.assert_array_equal(res_batch.sv, res_live.sv)
@@ -88,10 +93,16 @@ def test_fingerprint_hashes_match_baseline() -> None:
     reproducibility. Pin them so silent drift fails loud.
 
     Baseline captured 2026-06-30, before the live-simulator refactor.
+    This test exercises the **legacy** path (``fouling_dynamic=False``)
+    which must remain byte-identical to the upstream MATLAB numbers.
+    See ``test_fingerprint_hashes_dynamic_mode`` for the new
+    HEX-fouling (Layer 2.5) baseline.
     """
     import hashlib
 
-    res_batch = run_with(seed=42, verbose=False)
+    from bdsim.config import ProcessFaults
+    pfaults = ProcessFaults(fouling_dynamic=False)
+    res_batch = run_with(pfaults=pfaults, seed=42, verbose=False)
     expected = {
         "sv": "6f61eb532b3284ee",
         "pv": "72a3d070452c8fb8",
@@ -104,6 +115,33 @@ def test_fingerprint_hashes_match_baseline() -> None:
             f"{name} fingerprint drifted: {got} != baseline {want}. "
             "Either the upstream MATLAB numbers changed (unlikely) or "
             "the refactor introduced a numerical perturbation."
+        )
+
+
+def test_fingerprint_hashes_dynamic_mode() -> None:
+    """Dynamic HEX-fouling mode (Layer 2.5) has its own fingerprint.
+
+    Captured 2026-07-01 when the layer landed. Drift here signals a
+    real change in the Arrhenius dynamics — bumping this baseline is a
+    conscious decision, not a silent regression.
+    """
+    import hashlib
+
+    from bdsim.config import ProcessFaults
+    pfaults = ProcessFaults(fouling_dynamic=True)
+    res = run_with(pfaults=pfaults, seed=42, verbose=False)
+    expected = {
+        "sv": "1938fec8dee2c8ba",
+        "pv": "0a3f4cdc49a948c0",
+        "uv": "75f563d744dae41b",
+    }
+    for name, want in expected.items():
+        arr = getattr(res, name)
+        got = hashlib.sha256(arr.tobytes()).hexdigest()[:16]
+        assert got == want, (
+            f"{name} fingerprint drifted: {got} != baseline {want}. "
+            "If the dynamic-α dynamics changed intentionally, bump "
+            "this baseline and document the change in the lane file."
         )
 
 
@@ -121,7 +159,7 @@ def test_step_returns_step_result_with_correct_shapes() -> None:
     assert first.t == pytest.approx(0.0)
     assert first.pv.shape == (sim.sensor_faults.nsensors,)
     assert first.uv.shape == (6,)
-    assert first.sv.shape == (21,)
+    assert first.sv.shape == (22,)
     assert first.sp.shape == (4,)
     assert first.quality == {k: "good" for k in range(sim.sensor_faults.nsensors)}
 
