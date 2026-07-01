@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bdsim import LiveSimulator, run_with, StepResult
 from bdsim.config import (
+    ProcessFaults,
     Settings,
 )
 
@@ -177,6 +178,24 @@ def test_step_advances_time_monotonically() -> None:
         if count > 1000:
             pytest.fail("sim did not finish in <1000 steps")
     assert count == 401   # 2000/5 + 1
+
+
+def test_sim_t_after_done_returns_settings_tf() -> None:
+    """Reading ``sim.t`` after a run completes must not raise IndexError.
+
+    Regression for the dashboard ``POST /control`` and ``POST /faults``
+    500s: both endpoints read ``runner.sim.t`` to populate the response
+    payload, and the LiveSimulator.t property raised IndexError once
+    the run had reached end-of-time. Fixed by returning settings.tf
+    when the sim is done.
+    """
+    settings = Settings(ti=0.0, tf=10.0, dt=5.0)
+    sim = LiveSimulator(settings=settings, seed=42, pfaults=ProcessFaults(quality_state=False))
+    while not sim.done:
+        sim.step()
+    assert sim.done
+    # Reading t after done must return tf, not raise.
+    assert sim.t == float(settings.tf)
 
 
 def test_step_past_done_raises() -> None:

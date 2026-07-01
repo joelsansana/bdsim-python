@@ -190,8 +190,13 @@ class LiveSimulator:
     @property
     def t(self) -> float:
         """Current sim time (seconds). After :meth:`step`, this is the
-        end-of-step time. Initially ``self.settings.ti``.
+        end-of-step time. Initially ``self.settings.ti``. Once the sim
+        has reached end-of-time (``done`` is ``True``), this returns
+        ``settings.tf`` so callers reading ``sim.t`` after a run
+        completes don't see an IndexError.
         """
+        if self.done:
+            return float(self.settings.tf)
         if self._i == 0:
             return self.settings.ti
         return float(self._t[self._i])

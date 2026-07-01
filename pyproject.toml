@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bdsim"
+version = "0.4.0"
+description = "Biodiesel Process Simulator — Python port of Natércia Fernandes' BDSIM (Coimbra, 2019). Used as the OT sand table for Lepanto fault-detection R&D."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "GPL-3.0-or-later"}
+authors = [
+    {name = "Joel Sansana"},
+]
+dependencies = [
+    "numpy>=1.24",
+    "numba>=0.58",
+    "scipy>=1.11",
+    "torch>=2.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[tool.setuptools.packages.find]
+include = ["bdsim*"]
+exclude = ["tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
