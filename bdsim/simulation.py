@@ -393,13 +393,32 @@ def run_with(
     # for byte-identical reproducibility vs. the upstream baseline.
     use_dynamic_alpha = pfaults.fouling_dynamic
 
-    sv = np.zeros((lt, len(settings.sv0) + (1 if use_dynamic_alpha else 0)))
+    # Layer 2.1: quality state adds 6 components when enabled
+    # (sv[22:28]). When False, state vector stops at 22 (Layer 2.5 only).
+    use_quality_state = pfaults.quality_state
+
+    # State vector width: 21 (legacy), 22 (+ Layer 2.5), 28 (+ Layer 2.1).
+    sv_width = (
+        len(settings.sv0)
+        + (1 if use_dynamic_alpha else 0)
+        + (6 if use_quality_state else 0)
+    )
+
+    sv = np.zeros((lt, sv_width))
     sv[0, :len(settings.sv0)] = settings.sv0
     if use_dynamic_alpha:
         sv[0, 21] = 0.05                                       # HEX fouling α at start, lightly fouled
+    if use_quality_state:
+        # Initialise true instantaneous quality at the equilibrium
+        # targets. This is the "perfect online analyser" reading;
+        # the lab-cycle latched values are computed separately.
+        sv[0, 22] = p.fame_eq                                  # FAME%
+        sv[0, 23] = p.water_eq                                 # water, ppm
+        sv[0, 24] = p.iv_eq                                    # IV
+        sv[0, 25] = p.ffa_ref                                  # FFA in feed (mass fraction)
+        sv[0, 26] = 0.01                                       # water in feed (1% by mass, typical UCO)
+        sv[0, 27] = p.iv_eq                                    # IV in feed
     sv[0, 18] = settings.sv0[18] * 1e6                         # μm for numerical stability
-    # Layer 2.5: HEX fouling α ∈ [0, 1] is in sv[21] (only when
-    # fouling_dynamic=True). Initial value 0.05 = lightly fouled.
 
     xLend = np.zeros((lt, 6))
     yLend = np.zeros((lt, 6))
@@ -413,6 +432,30 @@ def run_with(
     pvAUTO = pv[0, pvindexAUTO]
 
     tclean = []
+
+    # ---- Layer 2.1: lab-cycle latching ------------------------------
+    # quality_latched[i, :] holds the most-recent lab sample for
+    # (FAME, water, IV) at sim step i. The latched value stays
+    # constant between lab cycles — this is the time-lag structure
+    # Lepanto exploits. Initial sample at t=0 so the dashboard
+    # has something to show on startup.
+    quality_latched = np.zeros((lt, 3))
+    last_lab_sample_t: float = -np.inf                       # force a sample at t=0
+    # Take the t=0 sample synchronously so the dashboard has a value
+    # before the first integration step completes.
+    if use_quality_state:
+        quality_latched[0, 0] = sv[0, 22] + pfaults.lab_noise_fame * np.random.randn()
+        quality_latched[0, 1] = sv[0, 23] + pfaults.lab_noise_water * np.random.randn()
+        quality_latched[0, 2] = sv[0, 24] + pfaults.lab_noise_iv * np.random.randn()
+        quality_latched[0, 0] = float(np.clip(quality_latched[0, 0], 0.0, 100.0))
+        quality_latched[0, 1] = float(np.clip(quality_latched[0, 1], 0.0, 5000.0))
+        quality_latched[0, 2] = float(np.clip(quality_latched[0, 2], 0.0, 200.0))
+    # Lab cycle period: lab mode uses lab_cycle_s (default 15 min),
+    # online mode uses online_cycle_s (default 60 s).
+    if pfaults.quality_lag_mode == "online":
+        lab_period_s = pfaults.online_cycle_s
+    else:
+        lab_period_s = pfaults.lab_cycle_s
     factor = _fouling(t, pfaults.fouling, pfaults.foulingpar)
 
     # Valve stiction state
@@ -425,7 +468,11 @@ def run_with(
 
     unoiseOLD = armax.unoise.copy()
 
-    rhs = make_rhs(p, use_dynamic_alpha=use_dynamic_alpha)
+    rhs = make_rhs(
+        p,
+        use_dynamic_alpha=use_dynamic_alpha,
+        use_quality_state=use_quality_state,
+    )
 
     # ============================================================ main loop
     if verbose:
@@ -524,6 +571,38 @@ def run_with(
             if verbose:
                 print(f"  Filter cleaning performed at t = {t[i]:.1f} s")
 
+        # ----------------- quality state post-processing (Layer 2.1)
+        # Clamp the true instantaneous quality to physical bounds.
+        # FAME% ∈ [0, 100], water ∈ [0, 5000] ppm, IV ∈ [0, 200].
+        # Feedstock state also clamped to physical bounds.
+        if use_quality_state:
+            sv[i, 22] = float(np.clip(sv[i, 22], 0.0, 100.0))           # FAME%
+            sv[i, 23] = float(np.clip(sv[i, 23], 0.0, 5000.0))         # water, ppm
+            sv[i, 24] = float(np.clip(sv[i, 24], 0.0, 200.0))          # IV
+            sv[i, 25] = float(np.clip(sv[i, 25], 0.0, 0.5))            # FFA feed
+            sv[i, 26] = float(np.clip(sv[i, 26], 0.0, 0.5))            # water feed
+            sv[i, 27] = float(np.clip(sv[i, 27], 0.0, 200.0))          # IV feed
+
+            # Lab-cycle latching: at each lab boundary, sample the true
+            # quality with analytical noise and hold the value until the
+            # next cycle. This is the time-lag structure.
+            if (t[i] - last_lab_sample_t) >= lab_period_s or i == 0:
+                quality_latched[i, 0] = sv[i, 22] + pfaults.lab_noise_fame * np.random.randn()
+                quality_latched[i, 1] = sv[i, 23] + pfaults.lab_noise_water * np.random.randn()
+                quality_latched[i, 2] = sv[i, 24] + pfaults.lab_noise_iv * np.random.randn()
+                # Re-clamp latched values to physical bounds.
+                quality_latched[i, 0] = float(np.clip(quality_latched[i, 0], 0.0, 100.0))
+                quality_latched[i, 1] = float(np.clip(quality_latched[i, 1], 0.0, 5000.0))
+                quality_latched[i, 2] = float(np.clip(quality_latched[i, 2], 0.0, 200.0))
+                last_lab_sample_t = t[i]
+            else:
+                # Hold previous latched value.
+                quality_latched[i, :] = quality_latched[i - 1, :]
+        else:
+            # Quality state disabled — published latched values are
+            # NaN-equivalent so the dashboard can detect "not active".
+            quality_latched[i, :] = np.nan
+
         xLend[i, :], yLend[i, :] = AEmodel(sv[i, :], p)
         pv[i, :] = _measurements(i, sv[i, :], uu, p, sfaults,
                                  sfaults.signal, sfaults.a, sfaults.b)
@@ -551,4 +630,5 @@ def run_with(
         t=t_out, uv=uv, sv=sv, pv=pv, sp=sp,
         xLend=xLend, yLend=yLend,
         tclean=np.array(tclean),
+        quality=quality_latched[:-1, :],
     )

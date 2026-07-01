@@ -105,6 +105,22 @@ class Parameters:
     ffa_ref: float = 0.05                                     # reference FFA fraction (dimensionless)
     alpha_clean: float = 0.1                                  # snap value on cleaning event
 
+    # ---- Layer 2.1: quality dynamics (Roadmap item 2.1) -------------------
+    # First-order relaxation of true quality state toward equilibrium.
+    # Time constants chosen so FAME ~ 30–60 min, water ~ 15–30 min,
+    # IV ~ hours at default operating point. k_q = 1/tau (1/s).
+    k_fame: float = 5.0e-4                                    # 1/s → tau ~ 33 min
+    k_water: float = 8.0e-4                                   # 1/s → tau ~ 21 min
+    k_iv: float = 2.0e-4                                      # 1/s → tau ~ 83 min
+    # Equilibrium targets at default operating conditions.
+    fame_eq: float = 97.0                                     # EN 14214 spec ≥ 96.5%
+    water_eq: float = 200.0                                   # EN 14214 limit ≤ 500 ppm
+    iv_eq: float = 60.0                                       # typical UCO
+    # Feedstock random-walk noise (small per-step deviations).
+    ffa_feed_noise: float = 1.0e-6                            # 1/sqrt(s) σ
+    water_feed_noise: float = 1.0e-7
+    iv_feed_noise: float = 1.0e-3
+
     def finalize(self) -> None:
         """Recompute derived quantities that depend on M and ro."""
         self.vmol = self.M / self.ro
@@ -133,6 +149,30 @@ class ProcessFaults:
     fouling_dynamic: bool = True                              # Layer 2.5: α evolves as a state when True
                                                               # When False, behaviour matches the legacy
                                                               # pre-baked series (factor = 1/(1 + Rf)).
+
+    # ---- Layer 2.1: quality state + feedstock quality -------------------
+    # When quality_state=True, sv0 grows by 6 components:
+    #   sv[22] = FAME%   (instantaneous true value, 0..100)
+    #   sv[23] = water   (instantaneous true value, ppm)
+    #   sv[24] = IV      (instantaneous true value, g I2/100g)
+    #   sv[25] = FFA_feed   (mass fraction, 0..1)
+    #   sv[26] = water_feed (mass fraction, 0..1)
+    #   sv[27] = IV_feed    (g I2/100g, typical 50..80)
+    # Published channels QA-101/102/103 carry the *latched* lab samples
+    # (sampled once per lab_cycle_s), not the instantaneous truth — this
+    # is the time-lag structure that Lepanto exploits.
+    # quality_lag_mode = "lab" → 15-min default lab cycle.
+    # quality_lag_mode = "online" → 60-s NIR cycle (online analyser).
+    # quality_state=False preserves the upstream 21-component state.
+    quality_state: bool = False                              # Layer 2.1 master switch. Default off to keep
+                                                              # backward-compat with existing callers; demos
+                                                              # enable it explicitly via ProcessFaults(quality_state=True).
+    quality_lag_mode: str = "lab"
+    lab_cycle_s: float = 15.0 * 60.0                           # 15 minutes default
+    online_cycle_s: float = 60.0                                # 1 minute for NIR
+    lab_noise_fame: float = 0.3                                # % absolute
+    lab_noise_water: float = 20.0                              # ppm absolute
+    lab_noise_iv: float = 1.0                                  # g I2/100g absolute
 
 
 # -----------------------------------------------------------------------------
@@ -407,6 +447,8 @@ class Results:
     xLend: np.ndarray                                         # light-phase end comp, (lt-1, 6)
     yLend: np.ndarray                                         # light-phase mass frac, (lt-1, 6)
     tclean: np.ndarray                                        # filter cleaning times, s
+    quality: np.ndarray | None = None                         # latched lab samples, (lt-1, 3): [FAME%, water ppm, IV]
+                                                              # Layer 2.1 — present when quality_state=True; NaN rows otherwise
 
     # Display-unit conversions (matching upstream's final plotting block)
     def in_display_units(self) -> "Results":
