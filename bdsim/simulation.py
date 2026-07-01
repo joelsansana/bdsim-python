@@ -313,6 +313,12 @@ def run_with(
     t = np.arange(settings.ti, settings.tf + settings.dt / 2, settings.dt)
     lt = len(t)
 
+    # ----- Layer 2.6: external disturbance track (lt x 3)
+    # Bind pfaults into settings so Settings.disturbances(t) can read
+    # the knobs without callers having to thread pfaults through.
+    settings._pfaults = pfaults
+    disturbance_track = settings.disturbances(t)
+
     # ---------------------------------------------------- filter constants
     K1F, K2F, K3F, K4F = _clogging_kit(p, pfaults)
     p.K1F, p.K2F, p.K3F, p.K4F = K1F, K2F, K3F, K4F
@@ -491,6 +497,28 @@ def run_with(
         u = u_new
         unoiseOLD = unoise
 
+        # ----------------- Layer 2.6: external disturbance overlay
+        # Apply the perturbation kernel: shifts to u[1] (Tmet), u[3]
+        # (Toil), and a multiplicative scale on u[4] (Qheat). When
+        # all amplitudes are zero (default) we skip the kernel
+        # entirely to preserve the legacy byte-identical fingerprint
+        # (FP operation ordering matters: even an identity u *= 1.0
+        # introduces last-bit drift after Numba-JIT).
+        if disturbance_track is not None and (
+            pfaults.ambient_t_amplitude_k != 0.0
+            or pfaults.cw_t_amplitude_k != 0.0
+            or pfaults.cw_p_drift_pa_per_h != 0.0
+            or pfaults.cw_p_noise_pa != 0.0
+        ):
+            amb, cw_t, cw_p = disturbance_track[i - 1, :]
+            # Tmet shifts with CW deviation from baseline.
+            u[1] = u[1] + (cw_t - pfaults.cw_t_mean_k) * pfaults.met_cw_track
+            # Toil shifts with ambient deviation.
+            u[3] = u[3] + (amb - pfaults.ambient_t_mean_k) * pfaults.oil_ambient_track
+            # Qheat scales with CW pressure (lower pressure = less heat transfer).
+            if pfaults.qheat_cw_scaling and pfaults.cw_p_nominal_pa > 0.0:
+                u[4] = u[4] * (cw_p / pfaults.cw_p_nominal_pa)
+
         if (i - 1) % settings.nic == 0:
             for k, ui in enumerate(uindexAUTO):
                 # upstream's pvindex matches uindex ordering, but here we look up
@@ -631,4 +659,5 @@ def run_with(
         xLend=xLend, yLend=yLend,
         tclean=np.array(tclean),
         quality=quality_latched[:-1, :],
+        disturbances=disturbance_track[:-1, :],
     )

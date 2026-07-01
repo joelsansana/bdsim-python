@@ -310,6 +310,7 @@ class LiveSimulator:
             yLend=yLend_buf,
             tclean=np.array(self._tclean, dtype=float),
             quality=self._quality_latched[:self._lt - 1, :].copy(),
+            disturbances=self._disturbance_track[:self._lt - 1, :].copy(),
         )
 
     # ------------------------------------------------------------------ #
@@ -387,6 +388,13 @@ class LiveSimulator:
 
         # Layer 2.1: quality state adds 6 components when enabled.
         self._use_quality_state = pfaults.quality_state
+
+        # Layer 2.6: external disturbance track. Built once at setup,
+        # referenced per-step to perturb u[] (Tmet, Toil, Qheat).
+        # When all amplitudes are zero, this reduces to identity.
+        self._pfaults = pfaults
+        settings._pfaults = pfaults
+        self._disturbance_track: np.ndarray = settings.disturbances(self._t)
         self._quality_latched = np.zeros((self._lt, 3))
         self._last_lab_sample_t: float = -np.inf
         if pfaults.quality_lag_mode == "online":
@@ -500,6 +508,7 @@ class LiveSimulator:
             sp=self._sp[0, :].copy(),
             quality=quality,
             quality_latched=self._quality_latched[0, :].copy() if self._use_quality_state else None,
+            disturbances=self._disturbance_track[0, :].copy(),
             xLend=self._xLend[0, :].copy(),
             yLend=self._yLend[0, :].copy(),
         )
@@ -524,6 +533,24 @@ class LiveSimulator:
                           unoise, self._unoiseOLD, self._d[i - 1, :])
         self._u = u_new
         self._unoiseOLD = unoise
+
+        # Layer 2.6: external disturbance overlay. Same kernel as
+        # the batch path in simulation.py: Tmet tracks CW deviation,
+        # Toil tracks ambient deviation, Qheat scales with CW
+        # pressure. Skipped entirely when all amplitudes are zero
+        # to preserve the legacy byte-identical fingerprint.
+        pfaults = self._pfaults
+        if (
+            pfaults.ambient_t_amplitude_k != 0.0
+            or pfaults.cw_t_amplitude_k != 0.0
+            or pfaults.cw_p_drift_pa_per_h != 0.0
+            or pfaults.cw_p_noise_pa != 0.0
+        ):
+            amb, cw_t, cw_p = self._disturbance_track[i - 1, :]
+            self._u[1] = self._u[1] + (cw_t - pfaults.cw_t_mean_k) * pfaults.met_cw_track
+            self._u[3] = self._u[3] + (amb - pfaults.ambient_t_mean_k) * pfaults.oil_ambient_track
+            if pfaults.qheat_cw_scaling and pfaults.cw_p_nominal_pa > 0.0:
+                self._u[4] = self._u[4] * (cw_p / pfaults.cw_p_nominal_pa)
 
         if (i - 1) % settings.nic == 0:
             mode = settings.mode_1b.astype(bool)
@@ -628,6 +655,7 @@ class LiveSimulator:
             sp=self._sp[i, :].copy(),
             quality=quality,
             quality_latched=self._quality_latched[i, :].copy() if self._use_quality_state else None,
+            disturbances=self._disturbance_track[i, :].copy(),
             xLend=self._xLend[i, :].copy(),
             yLend=self._yLend[i, :].copy(),
         )
