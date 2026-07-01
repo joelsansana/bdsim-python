@@ -403,11 +403,26 @@ def run_with(
     # (sv[22:28]). When False, state vector stops at 22 (Layer 2.5 only).
     use_quality_state = pfaults.quality_state
 
-    # State vector width: 21 (legacy), 22 (+ Layer 2.5), 28 (+ Layer 2.1).
+    # Layer 2.4: pump and valve degradation each add one continuous
+    # state slot. Independent of Layer 2.5 / Layer 2.1 — demos can
+    # enable either, both, or neither. The state-vector width grows
+    # by 1 or 2 as appropriate.
+    use_pump_wear = pfaults.pump_wear
+    use_valve_wear = pfaults.valve_wear
+
+    # Layer 2.4: forward the kinetics overrides onto ``p`` so the
+    # Numba kernel reads resolved values. Pattern matches Layer 2.5.
+    p.apply_layer24_overrides(pfaults)
+
+    # State vector width: 21 (legacy), 22 (+ Layer 2.5), 28 (+ Layer 2.1),
+    # +1 if pump_wear (sv[22] in legacy mode, sv[28] in quality mode),
+    # +1 if valve_wear (sv[23] in legacy mode, sv[29] in quality mode).
     sv_width = (
         len(settings.sv0)
         + (1 if use_dynamic_alpha else 0)
         + (6 if use_quality_state else 0)
+        + (1 if use_pump_wear else 0)
+        + (1 if use_valve_wear else 0)
     )
 
     sv = np.zeros((lt, sv_width))
@@ -424,6 +439,21 @@ def run_with(
         sv[0, 25] = p.ffa_ref                                  # FFA in feed (mass fraction)
         sv[0, 26] = 0.01                                       # water in feed (1% by mass, typical UCO)
         sv[0, 27] = p.iv_eq                                    # IV in feed
+    # Layer 2.4: continuous-state slots live *after* whatever the
+    # legacy / Layer 2.5 / Layer 2.1 stack produces. We compute the
+    # base index so the initial values land on the right row whether
+    # quality mode is on or off.
+    layer24_base = (
+        len(settings.sv0)
+        + (1 if use_dynamic_alpha else 0)
+        + (6 if use_quality_state else 0)
+    )
+    if use_pump_wear:
+        sv[0, layer24_base + 0] = float(pfaults.pump_health_initial)
+    if use_valve_wear:
+        sv[0, layer24_base + (1 if use_pump_wear else 0)] = float(
+            pfaults.valve_stiction_initial_pct
+        )
     sv[0, 18] = settings.sv0[18] * 1e6                         # μm for numerical stability
 
     xLend = np.zeros((lt, 6))
@@ -478,6 +508,8 @@ def run_with(
         p,
         use_dynamic_alpha=use_dynamic_alpha,
         use_quality_state=use_quality_state,
+        use_pump_wear=use_pump_wear,
+        use_valve_wear=use_valve_wear,
     )
 
     # ============================================================ main loop
@@ -520,8 +552,22 @@ def run_with(
             or pfaults.live_ambient_amplitude_k is not None
             or pfaults.live_cw_t_mean_k is not None
             or pfaults.live_cw_p_drift_pa_per_h is not None
+            # Layer 2.4: pump_wear multiplies cw_p per-step, so the
+            # perturbation block must run even when all the
+            # sinusoid / drift / live-knob amplitudes are zero.
+            # Without this, a worn pump would not affect Qheat.
+            or use_pump_wear
         ):
             amb, cw_t, cw_p = disturbance_track[i - 1, :]
+            # Layer 2.4: multiply cw_p by current pump_health (read
+            # from the previous step's state). At pump_health = 1.0
+            # the multiplier is 1.0 and the published pressure is the
+            # nominal; at 0.5 the pump delivers only half the head.
+            # This is the layer 2.4 effect application — the kernel
+            # itself just evolves the state slot, the driver applies
+            # the multiplier here.
+            if use_pump_wear:
+                cw_p = cw_p * sv[i - 1, layer24_base + 0]
             # Layer 2.7: baseline references must match the resolved
             # means/amps used inside settings.disturbances(). Pull
             # them once so the deviation math is consistent.
@@ -611,6 +657,23 @@ def run_with(
         if use_dynamic_alpha:
             sv[i, 21] = float(np.clip(sv[i, 21], 0.0, 1.0))
 
+        # Layer 2.4: post-integration clamping on pump_health and
+        # valve_stiction_pct. The kernel writes raw derivatives; the
+        # driver enforces physical bounds so we don't accumulate
+        # numerical drift outside the operating envelope.
+        if use_pump_wear:
+            sv[i, layer24_base + 0] = float(np.clip(
+                sv[i, layer24_base + 0],
+                pfaults.pump_wear_floor,
+                1.0,
+            ))
+        if use_valve_wear:
+            sv[i, layer24_base + (1 if use_pump_wear else 0)] = float(np.clip(
+                sv[i, layer24_base + (1 if use_pump_wear else 0)],
+                pfaults.valve_stiction_floor_pct,
+                pfaults.valve_stiction_ceiling_pct,
+            ))
+
         # ----------------- filter cleaning
         if pv[i - 1, 4] >= pfaults.DPclean:
             sv[i, 18] = p.rclean * 1e6
@@ -674,6 +737,27 @@ def run_with(
     # only one place avoids the previous double-conversion bug where the
     # kg/h values ended up 115× too large.
 
+    # Layer 2.4: apply pump_health multiplier to the published PCW
+    # channel (index 2) when pump_wear is on. The kernel applies the
+    # same factor on u[4] in the perturbation block; we mirror it on
+    # the published snapshot here so dashboards / Lepanto consumers
+    # see what the kernel actually used. We mutate a copy because the
+    # caller may want to inspect the unperturbed baseline elsewhere.
+    # The pump_health slot index depends on which other layers are
+    # enabled — same convention as the kernel's layer24_base.
+    disturbances_out = disturbance_track[:-1, :]
+    if pfaults.pump_wear:
+        pump_health_slot = (
+            21
+            + (1 if pfaults.fouling_dynamic else 0)
+            + (6 if pfaults.quality_state else 0)
+        )
+        pump_health_track = sv[: disturbances_out.shape[0], pump_health_slot]
+        disturbances_out = disturbances_out.copy()
+        disturbances_out[:, 2] = (
+            disturbances_out[:, 2] * pump_health_track
+        )
+
     runtime = time.perf_counter() - tic
     if verbose:
         print(f"Runtime: {runtime:.2f} s")
@@ -683,5 +767,5 @@ def run_with(
         xLend=xLend, yLend=yLend,
         tclean=np.array(tclean),
         quality=quality_latched[:-1, :],
-        disturbances=disturbance_track[:-1, :],
+        disturbances=disturbances_out,
     )
