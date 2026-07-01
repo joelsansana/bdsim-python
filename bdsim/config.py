@@ -121,12 +121,46 @@ class Parameters:
     water_feed_noise: float = 1.0e-7
     iv_feed_noise: float = 1.0e-3
 
+    # ---- Layer 2.4: actuator degradation kinetics constants ----
+    # Pump: dh/dt = -k_pump_wear * (Q/Qnom)^p. The driver converts
+    # the per-hour ``ProcessFaults.pump_wear_rate_per_h`` to a
+    # per-second rate constant here so the Numba kernel sees the
+    # canonical form.
+    k_pump_wear: float = 0.01 / 3600.0                         # per-second baseline wear rate at Q=Qnom
+    p_pump_wear: float = 1.5                                  # flow exponent (matches real pump curves)
+    pump_health_floor: float = 0.05                           # can't go to absolute zero head
+    pump_health_trip_threshold: float = 0.25                  # scenario-side trigger threshold
+    # Valve stiction: dstiction/dt = k_stiction * |dlift/dt|.
+    # k_stiction is in (%/stroke) per unit valve motion. The driver
+    # passes the per-second rate so the kernel can apply it directly.
+    k_valve_stiction: float = 0.05 / 3600.0                   # %/s per (lift%/s)
+    valve_stiction_ceiling: float = 60.0                      # % — at this point the loop is unstable
+
     def finalize(self) -> None:
         """Recompute derived quantities that depend on M and ro."""
         self.vmol = self.M / self.ro
         self.vmolo_local = self.vmolo
         self.cpmolo_local = self.cpmolo
         self.cpmolm = self.cpmolm
+
+    def apply_layer24_overrides(self, pfaults: ProcessFaults) -> None:
+        """Apply Layer 2.4 kinetics overrides from ``pfaults``.
+
+        Called by the driver after ``Parameters()`` is constructed so
+        any caller-set ``ProcessFaults.pump_wear_rate_per_h`` etc.
+        flow into the Numba-visible kinetics constants. Same pattern
+        as Layer 2.5 / 2.1's override paths.
+        """
+        # Pump wear rate: convert per-hour → per-second so the kernel
+        # multiplies by dt directly.
+        self.k_pump_wear = float(pfaults.pump_wear_rate_per_h) / 3600.0
+        self.p_pump_wear = float(pfaults.pump_wear_flow_exponent)
+        self.pump_health_floor = float(pfaults.pump_wear_floor)
+        self.pump_health_trip_threshold = float(pfaults.pump_health_trip_threshold)
+        # Valve stiction rate: same per-hour → per-second conversion.
+        # The kernel multiplies by |dlift/dt| (lift%/s) to give %/s.
+        self.k_valve_stiction = float(pfaults.valve_stiction_rate_pct_per_h) / 3600.0
+        self.valve_stiction_ceiling = float(pfaults.valve_stiction_ceiling_pct)
 
 
 # -----------------------------------------------------------------------------
@@ -229,6 +263,54 @@ class ProcessFaults:
     live_ambient_amplitude_k: float | None = None             # override ambient_t_amplitude_k
     live_cw_t_mean_k: float | None = None                     # override cw_t_mean_k
     live_cw_p_drift_pa_per_h: float | None = None            # override cw_p_drift_pa_per_h
+
+    # ------------------------------------------------------------------
+    # Layer 2.4: actuator degradation as continuous state.
+    #
+    # Two master switches, both default ``False``. When both are
+    # False the state vector is unchanged from Layer 2.7 (21
+    # components legacy, 22 + α in Layer 2.5 mode, 28 in Layer 2.1
+    # mode). When ``pump_wear=True`` the state vector grows by one
+    # slot (sv[22] = pump_health ∈ [0, 1]). When ``valve_wear=True``
+    # it grows by another slot (sv[23] = valve_stiction_pct ∈
+    # [0, 100]). The two switches are independent — demos can enable
+    # one or both.
+    #
+    # ``pump_health`` multiplies the CW pressure nominal, so a worn
+    # pump at ``pump_health = 0.7`` delivers only 70 % of the
+    # nominal head. The trip probability is NOT kernel-side — the
+    # scenario runner can read ``pump_health`` from a derived tag and
+    # schedule a ``cw_pump_trip`` when it crosses the trip
+    # threshold. Trip scheduling stays where it is (Layer 2.6b);
+    # Layer 2.4 only adds the underlying wear curve.
+    #
+    # ``valve_stiction_pct`` reduces the effective valve gain via
+    # ``kv_eff = kv * (1 - stiction / 100)``. Closed-loop
+    # oscillation in TR-101 / TD-201 becomes visible as stiction
+    # grows. The existing ``valve_stiction`` fault event still
+    # works as an instantaneous deadband injection; Layer 2.4
+    # models the slow build-up of that stiction.
+    # ------------------------------------------------------------------
+    pump_wear: bool = False                                    # Layer 2.4: pump degradation state (sv[22])
+    valve_wear: bool = False                                   # Layer 2.4: valve stiction state (sv[23])
+
+    # Initial values for the continuous-state slots. The driver
+    # writes these into sv[22] / sv[23] at construction time.
+    pump_health_initial: float = 1.0                           # 1.0 = brand-new impeller, 0.0 = end-of-life
+    valve_stiction_initial_pct: float = 0.0                    # 0 % = pristine, 100 % = full stroke stuck
+
+    # Kinetics constants. Defaults chosen so the demo ``pump_wear``
+    # scenario lands the pump in the trip zone within ~30 min of
+    # accelerated wear, and valve_stiction grows to a visibly
+    # oscillating regime in the same window. All values are tunable
+    # via ``ProcessFaults(...)`` overrides.
+    pump_wear_rate_per_h: float = 0.01                         # dh/dt baseline (per-second × 3600), at nominal flow
+    pump_wear_flow_exponent: float = 1.5                       # dh/dt ∝ (Q/Qnom)^p — higher flow → faster wear
+    pump_wear_floor: float = 0.05                              # lower bound — pump can't go to absolute zero head
+    pump_health_trip_threshold: float = 0.25                   # below this → trip becomes likely (scenario-side)
+    valve_stiction_rate_pct_per_h: float = 0.05                # grows proportional to |dlift/dt|
+    valve_stiction_floor_pct: float = 0.0                      # lower bound; can be negative in theory but never here
+    valve_stiction_ceiling_pct: float = 60.0                   # upper bound — at 60 % the loop is already unstable
 
 
 # -----------------------------------------------------------------------------

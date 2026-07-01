@@ -109,7 +109,12 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
                  fame_eq: float, water_eq: float, iv_eq: float,
                  ffa_feed_noise: float, water_feed_noise: float,
                  iv_feed_noise: float,
-                 use_quality_state: bool) -> np.ndarray:
+                 use_quality_state: bool,
+                 # ---- Actuator degradation (Roadmap Layer 2.4) ----
+                 k_pump_wear: float, p_pump_wear: float,
+                 pump_health_floor: float,
+                 k_valve_stiction: float, valve_stiction_ceiling: float,
+                 use_pump_wear: bool, use_valve_wear: bool) -> np.ndarray:
     """Right-hand side of the biodiesel ODE system, JIT-compiled.
 
     The decanter split neural-network outputs (``eta_E``, ``eta_M``,
@@ -126,19 +131,62 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
     quality (FFA_feed, water_feed, IV_feed). Each relaxes toward an
     equilibrium at first-order; feedstock states evolve by a small
     per-step random walk.
+
+    Layer 2.4: when ``use_pump_wear=True``, sv[22] carries
+    ``pump_health ∈ [0, 1]`` (continuous impeller wear). When
+    ``use_valve_wear=True``, sv[23] carries
+    ``valve_stiction_pct ∈ [0, 100]`` (continuous stiction buildup).
+    The pump-health state multiplies the CW pressure nominal; the
+    stiction state reduces the effective valve gain. Both
+    states accumulate continuously and decay only via explicit
+    cleaning / maintenance events.
     """
     nc = 6
     # NOTE: dsvdt is sized to match the working state vector. Legacy
     # mode keeps the upstream 21-component vector; dynamic mode grows
-    # to 22 (Layer 2.5); quality mode grows to 28 (Layer 2.1 adds 6).
-    # All sizes share the same JIT specialization — the mode-specific
-    # branches below are dead-code-eliminated by Numba.
+    # to 22 (Layer 2.5); quality mode grows to 28 (Layer 2.1 adds 6);
+    # Layer 2.4 adds 1 (pump) and 1 (valve) on top of whatever else
+    # is enabled. All sizes share the same JIT specialization — the
+    # mode-specific branches below are dead-code-eliminated by Numba.
     if use_quality_state:
-        dsvdt = np.zeros(28)
+        dsvdt = np.zeros(28 + (1 if use_pump_wear else 0) + (1 if use_valve_wear else 0))
     elif use_dynamic_alpha:
-        dsvdt = np.zeros(22)
+        dsvdt = np.zeros(22 + (1 if use_pump_wear else 0) + (1 if use_valve_wear else 0))
     else:
-        dsvdt = np.zeros(21)
+        dsvdt = np.zeros(21 + (1 if use_pump_wear else 0) + (1 if use_valve_wear else 0))
+
+    # Layer 2.4 slot indices. Compute once here so the dynamics
+    # blocks below write into the correct row regardless of which
+    # other layers are enabled. Pump always lands before valve when
+    # both are on (matches the driver-side convention).
+    layer24_base_local = (
+        21
+        + (1 if use_dynamic_alpha else 0)
+        + (6 if use_quality_state else 0)
+    )
+    pump_slot = layer24_base_local if use_pump_wear else -1
+    stiction_slot = (
+        layer24_base_local + (1 if use_pump_wear else 0)
+        if use_valve_wear
+        else -1
+    )
+
+    # Layer 2.4: resolve effective valve gains under stiction. A
+    # stiction of 0 % leaves kv unchanged; 60 % (the ceiling) cuts
+    # kv to 40 % of nominal. We pre-compute once per RHS call so the
+    # valve derivative below uses the resolved values.
+    if use_valve_wear:
+        # Layer 2.4: stiction slot index depends on which other
+        # modes are enabled. ``stiction_slot`` was computed at the
+        # top of this function. When pump_wear is off the slot is
+        # at ``layer24_base_local`` (no +1 offset for pump).
+        s = sv[stiction_slot] / 100.0                                # ∈ [0, 1]
+        stiction_factor = 1.0 - min(max(s, 0.0), 1.0)
+        kvo_eff = kvo * stiction_factor
+        kvH_eff = kvH * stiction_factor
+    else:
+        kvo_eff = kvo
+        kvH_eff = kvH
 
     # ------------------- Oil filter
     lifto = sv[19]
@@ -254,8 +302,8 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
     # ------------------- Valves
     vinputo = u[0]
     vinputH = u[5]
-    dlifto = (kvo * vinputo - lifto) / tauvo
-    dliftH = (kvH * vinputH - liftH) / tauvH
+    dlifto = (kvo_eff * vinputo - lifto) / tauvo
+    dliftH = (kvH_eff * vinputH - liftH) / tauvH
 
     # ------------------- Assemble
     dsvdt[0] = dxR0
@@ -341,6 +389,37 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
         dsvdt[25] = 0.0
         dsvdt[26] = 0.0
         dsvdt[27] = 0.0
+
+    # ------------------- Pump & valve degradation (Layer 2.4)
+    # ``pump_health`` walks down at a rate that scales with the
+    # current cooling-water flow proxy (we use |Fmet| as a cheap
+    # proxy: more methanol flow → higher duty → faster wear). The
+    # floor prevents the pump from going to zero head. The actual
+    # ``cw_p`` multiplier is applied outside the kernel by the
+    # driver, which reads sv[22] after integration; the kernel
+    # only writes the derivative so Numba can integrate it cleanly.
+    if use_pump_wear:
+        # Flow proxy: |Fmet| / Fmet_nominal ≈ 1.0 at the upstream
+        # baseline. We use |Nm| (mol/s of methanol). The upstream
+        # baseline Nm is about 5.7 mol/s (≈ 660 kg/h of methanol).
+        # Using 0.05 here would make wear 100× too fast. Pin to the
+        # real upstream number; small deviations are absorbed by
+        # the wear-rate constant.
+        Q_nom = 5.7
+        flow_proxy = abs(Nm) / Q_nom
+        wear_rate = k_pump_wear * (flow_proxy ** p_pump_wear)
+        # hpump_health = -wear_rate; the floor is enforced
+        # post-integration in the driver (Numba would have to
+        # branch on max(0, ...) which slows the inner loop).
+        dsvdt[pump_slot] = -wear_rate
+
+    # ``valve_stiction_pct`` accumulates proportionally to the
+    # current valve motion (|dlifto| + |dliftH|). Idle valves don't
+    # stiction-build; a valve that's moving sticks more.
+    if use_valve_wear:
+        motion = abs(dlifto) + abs(dliftH)                # lift%/s
+        dstiction = k_valve_stiction * motion              # %/s
+        dsvdt[stiction_slot] = dstiction
     return dsvdt
 
 
@@ -386,7 +465,9 @@ def _ae_model_jit(sv: np.ndarray, M: np.ndarray,
 def ODEmodel(t: float, sv: np.ndarray, p: dict, u: np.ndarray,
              factor: float = 1.0,
              use_dynamic_alpha: bool = True,
-             use_quality_state: bool = True) -> np.ndarray:
+             use_quality_state: bool = True,
+             use_pump_wear: bool = False,
+             use_valve_wear: bool = False) -> np.ndarray:
     """Pure-Python wrapper for :func:`_ode_rhs_jit`.
 
     The decanter split neural-network call happens here, on the Python side,
@@ -429,6 +510,10 @@ def ODEmodel(t: float, sv: np.ndarray, p: dict, u: np.ndarray,
         p.fame_eq, p.water_eq, p.iv_eq,
         p.ffa_feed_noise, p.water_feed_noise, p.iv_feed_noise,
         use_quality_state,
+        # Actuator degradation dynamics (Layer 2.4)
+        p.k_pump_wear, p.p_pump_wear, p.pump_health_floor,
+        p.k_valve_stiction, p.valve_stiction_ceiling,
+        use_pump_wear, use_valve_wear,
     )
 
 
@@ -443,7 +528,8 @@ def AEmodel(sv: np.ndarray, p) -> tuple[np.ndarray, np.ndarray]:
     return xLend, yLend
 
 
-def make_rhs(p, use_dynamic_alpha: bool = True, use_quality_state: bool = True):
+def make_rhs(p, use_dynamic_alpha: bool = True, use_quality_state: bool = True,
+             use_pump_wear: bool = False, use_valve_wear: bool = False):
     """Closure that captures ``p`` and the input vector for ``solve_ivp``.
 
     The simulation driver sets the active input vector on this closure just
@@ -457,6 +543,16 @@ def make_rhs(p, use_dynamic_alpha: bool = True, use_quality_state: bool = True):
     ``use_quality_state`` toggles Layer 2.1 quality-state dynamics
     (default True). Pass False to keep the state at 22 components
     (Layer 2.5 only).
+
+    ``use_pump_wear`` toggles Layer 2.4 pump degradation dynamics
+    (default False). Adds one continuous state slot (sv[22]) for
+    ``pump_health ∈ [0, 1]`` and applies it as a multiplier on the
+    CW pressure nominal.
+
+    ``use_valve_wear`` toggles Layer 2.4 valve stiction dynamics
+    (default False). Adds one continuous state slot (sv[23]) for
+    ``valve_stiction_pct ∈ [0, 100]`` and reduces the effective
+    valve gains ``kvo``, ``kvH`` proportionally.
     """
     state = {"u": np.zeros(6), "factor": 1.0}
 
@@ -464,6 +560,7 @@ def make_rhs(p, use_dynamic_alpha: bool = True, use_quality_state: bool = True):
         return ODEmodel(
             t, sv, p, state["u"], state["factor"],
             use_dynamic_alpha, use_quality_state,
+            use_pump_wear, use_valve_wear,
         )
 
     rhs.set_u = lambda u: state.__setitem__("u", u)

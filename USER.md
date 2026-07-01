@@ -171,11 +171,25 @@ class ProcessFaults:
     cw_pump_low_factor: float = 0.3   # Layer 2.6b trip pressure floor
     cw_pump_ramp_s: float = 30.0      # Layer 2.6b trip ramp duration
     cw_pump_default_duration_s: float = 600.0
+    # ----- Layer 2.4: pump/valve degradation as continuous state -----
+    pump_wear: bool = False                       # Layer 2.4: pump_health sv slot
+    valve_wear: bool = False                      # Layer 2.4: valve_stiction_pct sv slot
+    pump_health_initial: float = 1.0              # 1.0 = brand-new, floor 0.05 = end-state
+    pump_wear_rate_per_h: float = 0.01            # dh/dt baseline
+    pump_wear_flow_exponent: float = 1.5          # dh/dt ∝ (Q/Qnom)^p
+    pump_wear_floor: float = 0.05                 # lower bound, post-integration clamp
+    pump_health_trip_threshold: float = 0.25      # scenario-side trip becomes likely below this
+    valve_stiction_initial_pct: float = 0.0
+    valve_stiction_rate_pct_per_h: float = 0.05    # grows proportional to |dlift/dt|
+    valve_stiction_floor_pct: float = 0.0
+    valve_stiction_ceiling_pct: float = 60.0
 ```
 
 ## Common gotchas
 
-- **The state vector widens when you turn on Layer 2.5 or 2.1.** `sv.shape` is 21 (default), 22 (Layer 2.5), or 25 (Layer 2.5 + 2.1). If you trained a model on the 21-wide vector, you have to re-train.
+- **The state vector widens when you turn on Layer 2.5 or 2.1.** `sv.shape` is 21 (default), 22 (Layer 2.5), 28 (Layer 2.5 + 2.1), plus 1 per Layer 2.4 switch (pump_wear, valve_wear). If you trained a model on the 21-wide vector, you have to re-train.
+- **Layer 2.4 `pump_health` multiplies the published PCW track.** When `pump_wear=True`, the `disturbances[i, 2]` channel reads 0.7× baseline when `pump_health=0.7`. The kernel applies the same factor on `u[4]` (Qheat) so the reactor temperature responds. Two independent multiplicative effects can stack: the Layer 2.6b `cw_pump_trip` override and the wear multiplier both act on the PCW channel.
+- **Layer 2.4 valve stiction only grows when valves move.** Idle valves (`dlift = 0`) accumulate zero stiction per second. To see stiction grow in a demo, drive the PID loop with a Qheat dip or feedstock change — the control valves chasing the new setpoint is what builds stiction.
 - **`res.disturbances` is `None` unless you set disturbance amplitudes.** The kernel skips the path entirely when all amplitudes are zero (legacy byte-identical contract). Set at least one to nonzero.
 - **Live path and batch path have different fingerprints** even at the same seed. The Layer 2.6 fingerprint `sv=6f61eb53...` is the **batch** baseline. The live baseline is `sv=f37fb5e0...`. Both are pinned.
 - **`LiveSimulator.t` raises IndexError after the run completes** if you haven't installed the post-run fix (`v0.4.1+`). It returns `settings.tf` instead. The dashboard depends on this — make sure your install is current.

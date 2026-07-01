@@ -377,6 +377,92 @@ class LiveSimulator:
             )
         return v
 
+    # ------------------------------------------------------------------ #
+    # Operator actions (Roadmap Layer 2.4 — actuator degradation)
+    # ------------------------------------------------------------------ #
+    #
+    # These three mutators let the dashboard demonstrate sudden wear
+    # events without waiting for the natural kinetics to play out. They
+    # write directly into ``ProcessFaults`` so a subsequent rebuild
+    # picks the value up, AND inject into the live sim immediately when
+    # it's already running. Envelope validation is identical to the
+    # dynamics constants on :class:`ProcessFaults`.
+
+    def set_pump_health(self, value: float | None) -> dict[str, float | None]:
+        """Snap the pump to a specific health state.
+
+        ``None`` is treated as 1.0 (brand-new). The value must lie in
+        ``[pump_wear_floor, 1.0]``; out-of-envelope raises ``ValueError``.
+        The next integration step uses this as the starting state and
+        wear continues from there.
+        """
+        pfaults = self.pfaults
+        if not pfaults.pump_wear:
+            raise RuntimeError(
+                "set_pump_health requires pfaults.pump_wear=True; "
+                "construct the simulator with ProcessFaults(pump_wear=True)"
+            )
+        if value is None:
+            value = 1.0
+        if not (pfaults.pump_wear_floor <= float(value) <= 1.0):
+            raise ValueError(
+                f"pump_health={value} is outside [{pfaults.pump_wear_floor}, 1.0]"
+            )
+        prev = float(self._sv[self._i, self._pump_health_idx])
+        self._sv[self._i, self._pump_health_idx] = float(value)
+        # Also persist so a future rebuild carries the new initial state.
+        pfaults.pump_health_initial = float(value)
+        return {"knob": "pump_health", "previous": prev, "current": float(value)}
+
+    def set_valve_stiction_pct(self, value: float | None) -> dict[str, float | None]:
+        """Snap the valve stiction to a specific percentage.
+
+        ``None`` is treated as 0.0 (pristine). The value must lie in
+        ``[valve_stiction_floor_pct, valve_stiction_ceiling_pct]``;
+        out-of-envelope raises ``ValueError``.
+        """
+        pfaults = self.pfaults
+        if not pfaults.valve_wear:
+            raise RuntimeError(
+                "set_valve_stiction_pct requires pfaults.valve_wear=True"
+            )
+        if value is None:
+            value = 0.0
+        lo, hi = pfaults.valve_stiction_floor_pct, pfaults.valve_stiction_ceiling_pct
+        if not (lo <= float(value) <= hi):
+            raise ValueError(
+                f"valve_stiction_pct={value} is outside [{lo}, {hi}]"
+            )
+        prev = float(self._sv[self._i, self._valve_stiction_idx])
+        self._sv[self._i, self._valve_stiction_idx] = float(value)
+        pfaults.valve_stiction_initial_pct = float(value)
+        return {"knob": "valve_stiction_pct", "previous": prev, "current": float(value)}
+
+    def get_degradation_state(self) -> dict[str, dict[str, float | None]]:
+        """Snapshot pump_health + valve_stiction_pct (current and configured).
+
+        Each entry exposes ``current`` (the live state value) and
+        ``configured`` (the un-overridden initial value the sim was
+        built with). Returns an empty dict when both Layer 2.4 switches
+        are off.
+        """
+        out: dict[str, dict[str, float | None]] = {}
+        pfaults = self.pfaults
+        if pfaults.pump_wear:
+            out["pump_health"] = {
+                "current": float(self._sv[self._i, self._pump_health_idx]),
+                "configured": float(pfaults.pump_health_initial),
+                "trip_threshold": float(pfaults.pump_health_trip_threshold),
+                "floor": float(pfaults.pump_wear_floor),
+            }
+        if pfaults.valve_wear:
+            out["valve_stiction_pct"] = {
+                "current": float(self._sv[self._i, self._valve_stiction_idx]),
+                "configured": float(pfaults.valve_stiction_initial_pct),
+                "ceiling": float(pfaults.valve_stiction_ceiling_pct),
+            }
+        return out
+
     @property
     def done(self) -> bool:
         """True once the configured end time has been reached."""
@@ -585,9 +671,16 @@ class LiveSimulator:
         # path is enabled. Legacy mode keeps the state vector at 21
         # components for byte-identical reproducibility.
         self._use_dynamic_alpha = pfaults.fouling_dynamic
+        self._use_quality_state = pfaults.quality_state
+        self._use_pump_wear = pfaults.pump_wear
+        self._use_valve_wear = pfaults.valve_wear
+        # Forward Layer 2.4 kinetics overrides onto ``p`` so the
+        # Numba kernel reads resolved values (per-hour → per-second,
+        # etc). Pattern matches Layer 2.5 / Layer 2.1.
+        p.apply_layer24_overrides(pfaults)
 
         # Layer 2.1: quality state adds 6 components when enabled.
-        self._use_quality_state = pfaults.quality_state
+        # (set above alongside Layer 2.4 flags)
 
         # Layer 2.6: external disturbance track. Built once at setup,
         # referenced per-step to perturb u[] (Tmet, Toil, Qheat).
@@ -640,6 +733,8 @@ class LiveSimulator:
             len(settings.sv0)
             + (1 if self._use_dynamic_alpha else 0)
             + (6 if self._use_quality_state else 0)
+            + (1 if self._use_pump_wear else 0)
+            + (1 if self._use_valve_wear else 0)
         )
         self._sv = np.zeros((self._lt, sv_width))
         self._sv[0, :len(settings.sv0)] = settings.sv0
@@ -652,6 +747,32 @@ class LiveSimulator:
             self._sv[0, 25] = p.ffa_ref
             self._sv[0, 26] = 0.01
             self._sv[0, 27] = p.iv_eq
+        # Layer 2.4: continuous-state slots land *after* whatever the
+        # legacy / Layer 2.5 / Layer 2.1 stack produces. ``layer24_base``
+        # gives the absolute index of the first Layer 2.4 slot;
+        # pump_health lives at base+0, valve_stiction at base+1 (when
+        # pump_wear is also enabled) or base+0 (when only valve_wear).
+        self._layer24_base = (
+            len(settings.sv0)
+            + (1 if self._use_dynamic_alpha else 0)
+            + (6 if self._use_quality_state else 0)
+        )
+        if self._use_pump_wear:
+            self._sv[0, self._layer24_base + 0] = float(pfaults.pump_health_initial)
+        if self._use_valve_wear:
+            self._sv[0, self._layer24_base + (1 if self._use_pump_wear else 0)] = float(
+                pfaults.valve_stiction_initial_pct
+            )
+        # Helper getters so the perturbation block can read the right
+        # row without recomputing the index every step.
+        self._pump_health_idx = (
+            self._layer24_base if self._use_pump_wear else None
+        )
+        self._valve_stiction_idx = (
+            self._layer24_base + (1 if self._use_pump_wear else 0)
+            if self._use_valve_wear
+            else None
+        )
         self._sv[0, 18] = settings.sv0[18] * 1e6
 
         self._xLend = np.zeros((self._lt, 6))
@@ -692,6 +813,8 @@ class LiveSimulator:
             p,
             use_dynamic_alpha=self._use_dynamic_alpha,
             use_quality_state=self._use_quality_state,
+            use_pump_wear=self._use_pump_wear,
+            use_valve_wear=self._use_valve_wear,
         )
 
         self._i = 0                                         # current step index
@@ -749,6 +872,11 @@ class LiveSimulator:
             or pfaults.live_ambient_amplitude_k is not None
             or pfaults.live_cw_t_mean_k is not None
             or pfaults.live_cw_p_drift_pa_per_h is not None
+            # Layer 2.4: pump_wear multiplies cw_p per-step so the
+            # perturbation block must run even when the sinusoid /
+            # drift / live knobs are all at zero. Symmetric with the
+            # simulation.py driver.
+            or pfaults.pump_wear
         ):
             amb, cw_t, cw_p = self._disturbance_track[i - 1, :]
             # Layer 2.6b: apply cw_pump_trip override on top of the
@@ -758,6 +886,14 @@ class LiveSimulator:
             cw_p = self._apply_disturbance_override(
                 float(self._t[i - 1]), float(cw_p)
             )
+            # Layer 2.4: multiply cw_p by current pump_health (read
+            # from the previous step's state). pump_health ∈ [0, 1];
+            # at 1.0 the multiplier is 1.0 and cw_p is unaffected.
+            # This is the wear-side effect — the kernel evolves the
+            # state slot, the driver applies the multiplier here so
+            # the Qheat scaling block sees a worn-pump cw_p.
+            if pfaults.pump_wear:
+                cw_p = cw_p * float(self._sv[i - 1, self._pump_health_idx])
             # Layer 2.7: resolve operator-driven knob overlays so
             # the deviation math uses the same resolved baseline as
             # the track did. Pull once, use locally.
@@ -824,6 +960,22 @@ class LiveSimulator:
         # dynamic mode. Legacy mode keeps the 21-component state.
         if self._use_dynamic_alpha:
             self._sv[i, 21] = float(np.clip(self._sv[i, 21], 0.0, 1.0))
+
+        # Layer 2.4: post-integration clamping on pump_health and
+        # valve_stiction_pct. Driver-side enforcement so we don't
+        # accumulate numerical drift outside the operating envelope.
+        if self._use_pump_wear:
+            self._sv[i, self._pump_health_idx] = float(np.clip(
+                self._sv[i, self._pump_health_idx],
+                pfaults.pump_wear_floor,
+                1.0,
+            ))
+        if self._use_valve_wear:
+            self._sv[i, self._valve_stiction_idx] = float(np.clip(
+                self._sv[i, self._valve_stiction_idx],
+                pfaults.valve_stiction_floor_pct,
+                pfaults.valve_stiction_ceiling_pct,
+            ))
 
         # ----------------- filter cleaning
         if self._pv[i - 1, 4] >= pfaults.DPclean:
@@ -914,6 +1066,14 @@ class LiveSimulator:
             # snapshot so the surface matches the underlying state.
             t_here = float(self._t[i])
             row[2] = float(self._apply_disturbance_override(t_here, float(row[2])))
+        # Layer 2.4: pump_health multiplies the published PCW so
+        # the dashboard surface reflects what the kernel saw. The
+        # kernel applies the same factor on ``u[4]`` in the
+        # perturbation block; we mirror it here so the snapshot
+        # matches. Without this mirror, the dashboard would show
+        # the unperturbed baseline.
+        if self.pfaults.pump_wear and self._pump_health_idx is not None:
+            row[2] = float(row[2]) * float(self._sv[i, self._pump_health_idx])
         return row
 
     def _apply_disturbance_override(self, t: float, cw_p_baseline: float) -> float:
