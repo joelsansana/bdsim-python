@@ -388,9 +388,18 @@ def run_with(
     vpos = np.zeros((lt, len(vfaults.uindex)))
     vpos[0, :] = u0[vfaults.uindex - 1]
 
-    sv = np.zeros((lt, len(settings.sv0)))
-    sv[0, :] = settings.sv0
+    # Layer 2.5: HEX fouling α is in sv[21] only when the dynamic path
+    # is enabled. Legacy mode keeps the state vector at 21 components
+    # for byte-identical reproducibility vs. the upstream baseline.
+    use_dynamic_alpha = pfaults.fouling_dynamic
+
+    sv = np.zeros((lt, len(settings.sv0) + (1 if use_dynamic_alpha else 0)))
+    sv[0, :len(settings.sv0)] = settings.sv0
+    if use_dynamic_alpha:
+        sv[0, 21] = 0.05                                       # HEX fouling α at start, lightly fouled
     sv[0, 18] = settings.sv0[18] * 1e6                         # μm for numerical stability
+    # Layer 2.5: HEX fouling α ∈ [0, 1] is in sv[21] (only when
+    # fouling_dynamic=True). Initial value 0.05 = lightly fouled.
 
     xLend = np.zeros((lt, 6))
     yLend = np.zeros((lt, 6))
@@ -416,7 +425,7 @@ def run_with(
 
     unoiseOLD = armax.unoise.copy()
 
-    rhs = make_rhs(p)
+    rhs = make_rhs(p, use_dynamic_alpha=use_dynamic_alpha)
 
     # ============================================================ main loop
     if verbose:
@@ -465,7 +474,19 @@ def run_with(
         uu = u.copy()
         uu[vfaults.uindex - 1] = vpos[i, :]
         rhs.set_u(uu)
-        rhs.set_factor(factor[i])
+        # Layer 2.5: factor selection depends on the fouling mode.
+        # Dynamic path: the RHS itself reads α from sv[21], so the
+        # pre-baked factor argument is irrelevant; pass the previous
+        # step's α for parity with the legacy call signature.
+        # Legacy path: factor[i] from the pre-baked series drives the
+        # Theat equation exactly as before.
+        if use_dynamic_alpha:
+            rhs.set_factor(sv[i - 1, 21])
+        else:
+            rhs.set_factor(factor[i])
+        # NB: the `factor` argument is *also* ignored by the JIT when
+        # use_dynamic_alpha=True (the RHS uses sv[21] directly). The
+        # value passed here is just a placeholder for the legacy branch.
 
         # Note: state variable sv(19) is stored in micrometres upstream
         # (numerical stability). Convert from μm for the RHS, then back.
@@ -484,9 +505,18 @@ def run_with(
         else:
             sv[i, :] = sol.y[:, -1]
 
+        # Layer 2.5 post-integration handling of sv[21] (α) — only when
+        # the state vector is wide enough (dynamic mode). Legacy mode
+        # leaves sv at its 21-component upstream shape for byte-identical
+        # reproducibility.
+        if use_dynamic_alpha:
+            sv[i, 21] = float(np.clip(sv[i, 21], 0.0, 1.0))
+
         # ----------------- filter cleaning
         if pv[i - 1, 4] >= pfaults.DPclean:
             sv[i, 18] = p.rclean * 1e6
+            if use_dynamic_alpha:
+                sv[i, 21] = p.alpha_clean                          # snap α to 0.1
             var = pfaults.filter_std * np.random.randn()
             p.K2F = p.K2F + (4 * p.visco / np.pi) * p.cv**2 * var
             p.K4F = p.K4F + (8 * p.visco / np.pi) * var

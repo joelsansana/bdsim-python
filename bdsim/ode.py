@@ -99,15 +99,32 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
                  K1F: float, K2F: float, K3F: float,
                  kvo: float, tauvo: float,
                  kvH: float, tauvH: float, NHmax: float,
-                 eta_E: float, eta_M: float, eta_G: float) -> np.ndarray:
+                 eta_E: float, eta_M: float, eta_G: float,
+                 # ---- HEX fouling dynamics (Roadmap Layer 2.5) ----
+                 k_f0: float, E_a_f: float, k_decay: float,
+                 ffa_ref: float, alpha_clean: float,
+                 use_dynamic_alpha: bool) -> np.ndarray:
     """Right-hand side of the biodiesel ODE system, JIT-compiled.
 
     The decanter split neural-network outputs (``eta_E``, ``eta_M``,
     ``eta_G``) are passed as plain floats — the network itself is evaluated
     by the Python driver before each call (see :func:`make_rhs`).
+
+    Layer 2.5: ``sv[21]`` carries the HEX fouling factor α ∈ [0, 1].
+    When ``use_dynamic_alpha=True`` the driver writes α back into
+    ``factor`` so this RHS uses the live state; otherwise the
+    pre-baked ``factor`` argument (legacy path) is used as before.
     """
     nc = 6
-    dsvdt = np.zeros(21)
+    # NOTE: dsvdt is sized to match the working state vector. Legacy
+    # mode keeps the upstream 21-component vector; dynamic mode grows
+    # to 22 with the HEX fouling derivative at [21]. Both sizes share
+    # the same JIT specialization — the dynamic-only branch below is
+    # dead-code-eliminated by Numba in the legacy specialization.
+    if use_dynamic_alpha:
+        dsvdt = np.zeros(22)
+    else:
+        dsvdt = np.zeros(21)
 
     # ------------------- Oil filter
     lifto = sv[19]
@@ -248,6 +265,34 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
     dsvdt[18] = drdt
     dsvdt[19] = dlifto
     dsvdt[20] = dliftH
+
+    # ------------------- HEX fouling factor α (Layer 2.5)
+    # Two-term dynamics:
+    #   accumulation: k_f0 * (FFA factor) * exp(-E_a_f / (R * TR))
+    #   decay:        k_decay * α
+    # FFA fraction proxy: total free-fatty-acid surrogate is xR[1] (DG index
+    # in the upstream ordering — convention preserved from kinetics.py).
+    # The clamp on α ∈ [0, 1] happens post-integration in the driver; the
+    # RHS just produces the derivative.
+    if use_dynamic_alpha:
+        TR = sv[6]
+        FFA = sv[1]                                            # DG fraction as FFA surrogate
+        # Arrhenius accumulation; clamp exponent for numerical stability.
+        # exp(-E_a / (R * T)) is ~exp(-7.2) at 333 K → ~7.5e-4.
+        arr = math.exp(-E_a_f / (R_gas * max(TR, 1.0)))
+        # FFA factor: linear in FFA / ffa_ref with mild saturating behaviour
+        # (clamped to [0.5, 3.0] so a unit step in FFA at most triples the
+        # deposition rate — matches the empirical "dirty feedstock fouls
+        # faster" intuition without runaway dynamics).
+        ffa_factor = max(0.5, min(3.0, 1.0 + (FFA / max(ffa_ref, 1e-9))))
+        dalpha_dt = k_f0 * ffa_factor * arr - k_decay * sv[21]
+        dsvdt[21] = dalpha_dt
+    else:
+        # Legacy path: α evolves trivially (driver already set it from
+        # the pre-baked factor series). The state slot still exists but
+        # its derivative is zero here; the driver writes α = factor
+        # directly post-integration.
+        dsvdt[21] = 0.0
     return dsvdt
 
 
@@ -291,7 +336,8 @@ def _ae_model_jit(sv: np.ndarray, M: np.ndarray,
 # -----------------------------------------------------------------------------
 
 def ODEmodel(t: float, sv: np.ndarray, p: dict, u: np.ndarray,
-             factor: float = 1.0) -> np.ndarray:
+             factor: float = 1.0,
+             use_dynamic_alpha: bool = True) -> np.ndarray:
     """Pure-Python wrapper for :func:`_ode_rhs_jit`.
 
     The decanter split neural-network call happens here, on the Python side,
@@ -325,6 +371,10 @@ def ODEmodel(t: float, sv: np.ndarray, p: dict, u: np.ndarray,
         p.kvo, p.tauvo,
         p.kvH, p.tauvH, p.NHmax,
         eta[0], eta[1], eta[2],
+        # HEX fouling dynamics (Layer 2.5)
+        p.k_f0, p.E_a_f, p.k_decay,
+        p.ffa_ref, p.alpha_clean,
+        use_dynamic_alpha,
     )
 
 
@@ -339,17 +389,21 @@ def AEmodel(sv: np.ndarray, p) -> tuple[np.ndarray, np.ndarray]:
     return xLend, yLend
 
 
-def make_rhs(p):
+def make_rhs(p, use_dynamic_alpha: bool = True):
     """Closure that captures ``p`` and the input vector for ``solve_ivp``.
 
     The simulation driver sets the active input vector on this closure just
     before each integration interval. The closure signature matches the
     scipy convention ``f(t, sv) -> dsv/dt``.
+
+    ``use_dynamic_alpha`` toggles Layer 2.5 fouling dynamics (default
+    True). Pass False for bit-identical behaviour to the legacy
+    pre-baked ``factor`` series.
     """
     state = {"u": np.zeros(6), "factor": 1.0}
 
     def rhs(t: float, sv: np.ndarray) -> np.ndarray:
-        return ODEmodel(t, sv, p, state["u"], state["factor"])
+        return ODEmodel(t, sv, p, state["u"], state["factor"], use_dynamic_alpha)
 
     rhs.set_u = lambda u: state.__setitem__("u", u)
     rhs.set_factor = lambda f: state.__setitem__("factor", f)

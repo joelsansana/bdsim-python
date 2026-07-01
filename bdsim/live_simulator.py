@@ -343,6 +343,11 @@ class LiveSimulator:
         armax.eta[self._uindexAUTO] = 0.0
         armax.unoise_std[self._uindexAUTO] = 0.0
 
+        # Layer 2.5: HEX fouling α is in sv[21] only when the dynamic
+        # path is enabled. Legacy mode keeps the state vector at 21
+        # components for byte-identical reproducibility.
+        self._use_dynamic_alpha = pfaults.fouling_dynamic
+
         # --- exogenous disturbance
         d = settings.exogenous(self._t)
         d[:, 2] = d[:, 2] / p.Mm / 3600.0
@@ -372,8 +377,13 @@ class LiveSimulator:
         self._vpos = np.zeros((self._lt, len(vfaults.uindex)))
         self._vpos[0, :] = u0[vfaults.uindex - 1]
 
-        self._sv = np.zeros((self._lt, len(settings.sv0)))
-        self._sv[0, :] = settings.sv0
+        # Layer 2.5: HEX fouling α is in sv[21] only when the dynamic
+        # path is enabled. Legacy mode keeps the state vector at 21
+        # components for byte-identical reproducibility.
+        self._sv = np.zeros((self._lt, len(settings.sv0) + (1 if self._use_dynamic_alpha else 0)))
+        self._sv[0, :len(settings.sv0)] = settings.sv0
+        if self._use_dynamic_alpha:
+            self._sv[0, 21] = 0.05                              # HEX fouling α at start, lightly fouled
         self._sv[0, 18] = settings.sv0[18] * 1e6
 
         self._xLend = np.zeros((self._lt, 6))
@@ -400,7 +410,7 @@ class LiveSimulator:
         self._valve_yOLD = self._vpos[0, :].copy()
 
         self._unoiseOLD = armax.unoise.copy()
-        self._rhs = make_rhs(p)
+        self._rhs = make_rhs(p, use_dynamic_alpha=self._use_dynamic_alpha)
 
         self._i = 0                                         # current step index
 
@@ -470,7 +480,11 @@ class LiveSimulator:
         uu = self._u.copy()
         uu[vfaults.uindex - 1] = self._vpos[i, :]
         self._rhs.set_u(uu)
-        self._rhs.set_factor(self._factor[i])
+        # Layer 2.5: factor selection — same convention as simulation.py.
+        if self._use_dynamic_alpha:
+            self._rhs.set_factor(self._sv[i - 1, 21])
+        else:
+            self._rhs.set_factor(self._factor[i])
         sv_init = self._sv[i - 1, :].copy()
         sol = solve_ivp(self._rhs, (self._t[i - 1], self._t[i]), sv_init,
                         method="RK45", rtol=1e-3, atol=1e-6,
@@ -480,9 +494,16 @@ class LiveSimulator:
         else:
             self._sv[i, :] = sol.y[:, -1]
 
+        # Layer 2.5 post-integration handling of sv[21] (α) — only in
+        # dynamic mode. Legacy mode keeps the 21-component state.
+        if self._use_dynamic_alpha:
+            self._sv[i, 21] = float(np.clip(self._sv[i, 21], 0.0, 1.0))
+
         # ----------------- filter cleaning
         if self._pv[i - 1, 4] >= pfaults.DPclean:
             self._sv[i, 18] = p.rclean * 1e6
+            if self._use_dynamic_alpha:
+                self._sv[i, 21] = p.alpha_clean                   # snap α to 0.1
             var = pfaults.filter_std * np.random.randn()
             p.K2F = p.K2F + (4 * p.visco / np.pi) * p.cv**2 * var
             p.K4F = p.K4F + (8 * p.visco / np.pi) * var
