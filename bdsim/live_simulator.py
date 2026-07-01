@@ -192,6 +192,191 @@ class LiveSimulator:
         changed["cleaning_times_s"] = list(self._tclean)
         return changed
 
+    # ------------------------------------------------------------------ #
+    # Operator actions (Roadmap Layer 2.7 — disturbance knobs)
+    # ------------------------------------------------------------------ #
+    #
+    # These four setters let the dashboard's disturbance panel ride
+    # the exogenous environment for the rest of the run. Each knob
+    # is **persistent** (no time window, no expiry — they're the
+    # "today's weather is hotter than usual" controls, not the
+    # "brownout for 5 minutes" controls that :class:`FaultSpec`
+    # already provides). Setting a knob to ``None`` clears the
+    # overlay and reverts to the configured profile baseline.
+    #
+    # Validation is the minimal envelope: amplitudes drift between
+    # physically plausible values, drift rate between ±1000 Pa/h,
+    # mean temperatures between 0 °C and 60 °C (well outside the
+    # biodiesel reactor's operating range). Out-of-envelope values
+    # raise :class:`ValueError` so a bad UI input doesn't silently
+    # poison the run.
+
+    def set_ambient_mean_k(self, value: float | None) -> dict[str, float | None]:
+        """Override ambient temperature setpoint (K).
+
+        ``None`` clears the overlay and reverts to
+        ``pfaults.ambient_t_mean_k``. Otherwise the value must lie in
+        ``[263.15, 333.15]`` (-10 °C .. 60 °C). Takes effect on the
+        next ``step()`` (the perturbation kernel recomputes the
+        track from the live knob).
+        """
+        resolved = self._validate_knob("ambient_mean_k", value, lo=263.15, hi=333.15)
+        prev = self.pfaults.live_ambient_mean_k
+        self.pfaults.live_ambient_mean_k = resolved
+        self._refresh_disturbance_track()
+        return {"knob": "ambient_mean_k", "previous": prev, "current": resolved}
+
+    def set_ambient_amplitude_k(self, value: float | None) -> dict[str, float | None]:
+        """Override ambient daily-sinusoid amplitude (K).
+
+        ``None`` clears the overlay; otherwise the value must lie in
+        ``[0.0, 30.0]`` (the configured default is 8 K, the operator
+        can pin it flat at 0 to mean "boring day, no swing").
+        """
+        resolved = self._validate_knob("ambient_amplitude_k", value, lo=0.0, hi=30.0)
+        prev = self.pfaults.live_ambient_amplitude_k
+        self.pfaults.live_ambient_amplitude_k = resolved
+        self._refresh_disturbance_track()
+        return {"knob": "ambient_amplitude_k", "previous": prev, "current": resolved}
+
+    def set_cw_t_mean_k(self, value: float | None) -> dict[str, float | None]:
+        """Override cooling-water inlet setpoint (K).
+
+        ``None`` clears the overlay; otherwise the value must lie in
+        ``[263.15, 313.15]`` (-10 °C .. 40 °C). Above ~40 °C the
+        HEX starts losing duty, below 0 °C the cooling tower freezes.
+        """
+        resolved = self._validate_knob("cw_t_mean_k", value, lo=263.15, hi=313.15)
+        prev = self.pfaults.live_cw_t_mean_k
+        self.pfaults.live_cw_t_mean_k = resolved
+        self._refresh_disturbance_track()
+        return {"knob": "cw_t_mean_k", "previous": prev, "current": resolved}
+
+    def set_cw_p_drift_pa_per_h(self, value: float | None) -> dict[str, float | None]:
+        """Override cooling-water pressure drift rate (Pa/h).
+
+        ``None`` clears the overlay; otherwise the value must lie
+        in ``[-1000.0, 1000.0]``. Negative means the pumps are
+        wearing (pressure drifts down over hours), positive means
+        a fresh pump is over-pressurising. Daily-bin drift only —
+        the long-term trend is the story, not noise.
+        """
+        resolved = self._validate_knob("cw_p_drift_pa_per_h", value, lo=-1000.0, hi=1000.0)
+        prev = self.pfaults.live_cw_p_drift_pa_per_h
+        self.pfaults.live_cw_p_drift_pa_per_h = resolved
+        self._refresh_disturbance_track()
+        return {"knob": "cw_p_drift_pa_per_h", "previous": prev, "current": resolved}
+
+    def clear_disturbance_knobs(self) -> dict[str, dict[str, None]]:
+        """Clear all operator-driven knob overlays in one call.
+
+        Returns a small dict mapping knob name → previous (None is
+        always returned as the ``current`` value). Mirrors the
+        ``reset`` semantics of the dashboard "Restore defaults" button.
+        """
+        prevs: dict[str, dict[str, None]] = {}
+        for knob, attr in (
+            ("ambient_mean_k", "live_ambient_mean_k"),
+            ("ambient_amplitude_k", "live_ambient_amplitude_k"),
+            ("cw_t_mean_k", "live_cw_t_mean_k"),
+            ("cw_p_drift_pa_per_h", "live_cw_p_drift_pa_per_h"),
+        ):
+            prev = getattr(self.pfaults, attr)
+            setattr(self.pfaults, attr, None)
+            prevs[knob] = {"previous": prev, "current": None}
+        self._refresh_disturbance_track()
+        return prevs
+
+    def _refresh_disturbance_track(self) -> None:
+        """Rebuild ``self._disturbance_track`` after a knob mutation.
+
+        The track is computed once at :meth:`_setup` time and held
+        steady through the run so the kernel's perturbation math
+        (Tmet, Toil, Qheat shifts) stays stable. When an operator
+        pushes a knob, only the **future** rows of the track reflect
+        the new operating point — past rows stay put, so the
+        trajectory doesn't time-warp. The rebuild is an O(lt - i)
+        scan, cheap for typical demo horizons (a few thousand rows).
+
+        Idempotent on the no-knob path: if no ``live_*`` overlay is
+        set, the rebuilt track matches the kernel baseline exactly.
+        """
+        if not hasattr(self, "_t") or not hasattr(self, "_pfaults"):
+            return                                          # setup hasn't run yet
+        if self._pfaults is None:
+            return
+        # Past rows (indices < self._i) are published and immutable;
+        # only the future part shifts under the new operating point.
+        i_pivot = self._i
+        t_full = self._t
+        # Recompute the full track against the current pfaults.
+        new_track = self.settings.disturbances(t_full)
+        # For past rows (already-published), keep the prior track.
+        if i_pivot > 0 and self._disturbance_track is not None:
+            new_track[:i_pivot] = self._disturbance_track[:i_pivot]
+        self._disturbance_track = new_track
+
+    def get_disturbance_knobs(self) -> dict[str, dict[str, float | None]]:
+        """Snapshot the active knob overlays + profile baselines.
+
+        Returned shape::
+
+            {
+                "ambient_mean_k":      {"live": ..., "configured": ...},
+                "ambient_amplitude_k": {"live": ..., "configured": ...},
+                "cw_t_mean_k":         {"live": ..., "configured": ...},
+                "cw_p_drift_pa_per_h": {"live": ..., "configured": ...},
+            }
+
+        ``live`` is the override value (``None`` means no overlay).
+        ``configured`` is the un-overridden profile baseline the
+        overlay replaces (or, if no overlay is set, the value the
+        kernel is actually using).
+        """
+        return {
+            "ambient_mean_k": {
+                "live": self.pfaults.live_ambient_mean_k,
+                "configured": self.pfaults.ambient_t_mean_k,
+            },
+            "ambient_amplitude_k": {
+                "live": self.pfaults.live_ambient_amplitude_k,
+                "configured": self.pfaults.ambient_t_amplitude_k,
+            },
+            "cw_t_mean_k": {
+                "live": self.pfaults.live_cw_t_mean_k,
+                "configured": self.pfaults.cw_t_mean_k,
+            },
+            "cw_p_drift_pa_per_h": {
+                "live": self.pfaults.live_cw_p_drift_pa_per_h,
+                "configured": self.pfaults.cw_p_drift_pa_per_h,
+            },
+        }
+
+    @staticmethod
+    def _validate_knob(
+        name: str, value: float | None, *, lo: float, hi: float
+    ) -> float | None:
+        """Validate an operator-driven knob overlay value.
+
+        ``None`` is always accepted (clear-overlay). Otherwise the
+        value must be a real number in ``[lo, hi]`` (both inclusive
+        at the extremes). Raises :class:`ValueError` with a hint
+        about the envelope so the dashboard can show a useful error.
+        """
+        if value is None:
+            return None
+        try:
+            v = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"{name} must be a real number or null, got {value!r}"
+            ) from exc
+        if not (lo <= v <= hi):
+            raise ValueError(
+                f"{name}={v!r} is outside the operator knob envelope [{lo}, {hi}]"
+            )
+        return v
+
     @property
     def done(self) -> bool:
         """True once the configured end time has been reached."""
@@ -560,6 +745,10 @@ class LiveSimulator:
             or pfaults.cw_t_amplitude_k != 0.0
             or pfaults.cw_p_drift_pa_per_h != 0.0
             or pfaults.cw_p_noise_pa != 0.0
+            or pfaults.live_ambient_mean_k is not None
+            or pfaults.live_ambient_amplitude_k is not None
+            or pfaults.live_cw_t_mean_k is not None
+            or pfaults.live_cw_p_drift_pa_per_h is not None
         ):
             amb, cw_t, cw_p = self._disturbance_track[i - 1, :]
             # Layer 2.6b: apply cw_pump_trip override on top of the
@@ -569,8 +758,21 @@ class LiveSimulator:
             cw_p = self._apply_disturbance_override(
                 float(self._t[i - 1]), float(cw_p)
             )
-            self._u[1] = self._u[1] + (cw_t - pfaults.cw_t_mean_k) * pfaults.met_cw_track
-            self._u[3] = self._u[3] + (amb - pfaults.ambient_t_mean_k) * pfaults.oil_ambient_track
+            # Layer 2.7: resolve operator-driven knob overlays so
+            # the deviation math uses the same resolved baseline as
+            # the track did. Pull once, use locally.
+            amb_mean_resolved = (
+                pfaults.live_ambient_mean_k
+                if pfaults.live_ambient_mean_k is not None
+                else pfaults.ambient_t_mean_k
+            )
+            cw_mean_resolved = (
+                pfaults.live_cw_t_mean_k
+                if pfaults.live_cw_t_mean_k is not None
+                else pfaults.cw_t_mean_k
+            )
+            self._u[1] = self._u[1] + (cw_t - cw_mean_resolved) * pfaults.met_cw_track
+            self._u[3] = self._u[3] + (amb - amb_mean_resolved) * pfaults.oil_ambient_track
             if pfaults.qheat_cw_scaling and pfaults.cw_p_nominal_pa > 0.0:
                 self._u[4] = self._u[4] * (cw_p / pfaults.cw_p_nominal_pa)
 
