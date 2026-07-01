@@ -208,6 +208,60 @@ def test_reset_rewinds_to_t0() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Operator actions (Roadmap Layer 2.5)
+# ---------------------------------------------------------------------------
+
+
+def test_trigger_cleaning_dynamic_mode_snaps_alpha_to_alpha_clean() -> None:
+    """``trigger_cleaning()`` on a dynamic-mode simulator must snap sv[21] to alpha_clean.
+
+    Also verifies the pore-radius reset (sv[18]) and the cleaning-time
+    append behave identically to the auto-trigger path.
+    """
+    from bdsim.config import ProcessFaults
+    settings = _make_short_settings()
+    pfaults = ProcessFaults(fouling_dynamic=True)
+    sim = LiveSimulator(settings=settings, pfaults=pfaults, seed=42)
+    sim.step()
+    # State vector must be 22 wide in dynamic mode.
+    assert sim._sv.shape[1] == 22
+    # Dirty α by direct write.
+    sim._sv[sim.i, 21] = 0.7
+    before_tclean_count = len(sim._tclean)
+
+    result = sim.trigger_cleaning()
+
+    assert sim._sv[sim.i, 21] == pytest.approx(sim.p.alpha_clean)
+    assert sim._sv[sim.i, 21] == pytest.approx(0.1)
+    # Pore radius reset (existing behaviour preserved).
+    assert sim._sv[sim.i, 18] == pytest.approx(sim.p.rclean * 1e6)
+    # Cleaning time appended.
+    assert len(sim._tclean) == before_tclean_count + 1
+    assert sim._tclean[-1] == pytest.approx(sim.t)
+    # Return summary includes alpha key only when dynamic.
+    assert result["alpha"] == pytest.approx(0.1)
+    assert result["pore_radius_um"] == pytest.approx(sim.p.rclean * 1e6)
+
+
+def test_trigger_cleaning_legacy_mode_skips_alpha() -> None:
+    """Legacy 21-component simulators must still support pore-radius resets."""
+    from bdsim.config import ProcessFaults
+    settings = _make_short_settings()
+    pfaults = ProcessFaults(fouling_dynamic=False)
+    sim = LiveSimulator(settings=settings, pfaults=pfaults, seed=42)
+    sim.step()
+    assert sim._sv.shape[1] == 21
+
+    result = sim.trigger_cleaning()
+
+    # Pore radius still reset.
+    assert sim._sv[sim.i, 18] == pytest.approx(sim.p.rclean * 1e6)
+    # No alpha key in the legacy return.
+    assert "alpha" not in result
+    assert "pore_radius_um" in result
+
+
+# ---------------------------------------------------------------------------
 # Live sensor fault injection
 # ---------------------------------------------------------------------------
 

@@ -146,6 +146,42 @@ class LiveSimulator:
         self._setup()
         self._last_published.clear()
 
+    # ------------------------------------------------------------------ #
+    # Operator actions (Roadmap Layer 2.5)
+    # ------------------------------------------------------------------ #
+
+    def trigger_cleaning(self) -> dict[str, Any]:
+        """Operator-initiated HEX/filter cleaning event.
+
+        Snaps the current step's HEX fouling factor α (sv[21]) to
+        ``alpha_clean`` (default 0.1), resets the filter pore radius
+        (sv[18]) to ``rclean``, and records the cleaning time in
+        ``self._tclean``. The next :meth:`step` propagates these
+        values into the publish path.
+
+        Returns a small dict with the change summary so callers can
+        audit the action. In legacy mode (state vector has 21
+        components) the α slot is silently skipped — the pore-radius
+        reset still happens.
+
+        Thread-safety: not thread-safe. Call from the same thread that
+        owns the step loop (typically the FastAPI request handler
+        invokes this via the runner's lock).
+        """
+        i = self._i
+        changed: dict[str, Any] = {"step": i, "sim_time_s": float(self._t[i])}
+        # Pore radius reset (always — this is the existing cleaning action).
+        self._sv[i, 18] = self.p.rclean * 1e6
+        changed["pore_radius_um"] = float(self._sv[i, 18])
+        # HEX fouling reset (Layer 2.5 — only when the state vector has the slot).
+        if self._sv.shape[1] > 21:
+            self._sv[i, 21] = self.p.alpha_clean
+            changed["alpha"] = float(self._sv[i, 21])
+        # Append the cleaning timestamp (matches the auto-trigger behaviour).
+        self._tclean.append(float(self._t[i]))
+        changed["cleaning_times_s"] = list(self._tclean)
+        return changed
+
     @property
     def done(self) -> bool:
         """True once the configured end time has been reached."""
