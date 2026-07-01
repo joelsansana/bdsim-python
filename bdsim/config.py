@@ -194,6 +194,18 @@ class ProcessFaults:
     oil_ambient_track: float = 0.7                             # Toil shift per K of ambient deviation
     qheat_cw_scaling: bool = True                              # Qheat *= Pwater_cw / cw_p_nominal_pa
 
+    # ------------------------------------------------------------------
+    # Layer 2.6b: cw_pump_trip mid-run override knobs. All default
+    # values are conservative and aligned with the dashboard
+    # FaultSpec defaults so a no-fault sim is byte-identical to the
+    # Layer 2.6 fingerprint. Override is single-slot (a second trip
+    # replaces the first); the kernel applies the envelope on top of
+    # the baseline sinusoidal profile.
+    # ------------------------------------------------------------------
+    cw_pump_low_factor: float = 0.3                            # pressure floor during trip (1.0 = no drop, 0.0 = zero)
+    cw_pump_ramp_s: float = 30.0                               # ramp-down + ramp-up duration, seconds
+    cw_pump_default_duration_s: float = 600.0                 # default trip duration when the FaultSpec doesn't set one
+
 
 # -----------------------------------------------------------------------------
 # Sensor faults

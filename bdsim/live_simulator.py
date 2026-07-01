@@ -134,6 +134,13 @@ class LiveSimulator:
         # original module) up to the point where the main loop starts.
         self._setup()
         self._last_published: dict[int, float] = {}    # sensor index → value (for stuck semantic)
+        # Layer 2.6b: single-slot mid-run override for the CW pressure
+        # disturbance channel. None = no override (the kernel applies
+        # the baseline sinusoidal profile only). Populated by a
+        # ``cw_pump_trip`` handler (see faults.py) and cleared when
+        # the trip expires. Single-slot matches ``power_dip``
+        # semantics — a second trip replaces the first.
+        self._disturbance_override: dict[str, Any] | None = None
 
     # ------------------------------------------------------------------ #
     # Lifecycle
@@ -145,6 +152,9 @@ class LiveSimulator:
         """
         self._setup()
         self._last_published.clear()
+        # Layer 2.6b: clear any active cw_pump_trip override so the
+        # next run starts from a clean disturbance state.
+        self._disturbance_override = None
 
     # ------------------------------------------------------------------ #
     # Operator actions (Roadmap Layer 2.5)
@@ -552,6 +562,13 @@ class LiveSimulator:
             or pfaults.cw_p_noise_pa != 0.0
         ):
             amb, cw_t, cw_p = self._disturbance_track[i - 1, :]
+            # Layer 2.6b: apply cw_pump_trip override on top of the
+            # baseline CW pressure. The override is single-slot — a
+            # second trip replaces the first. No-op when no override
+            # is active or when the trip has expired.
+            cw_p = self._apply_disturbance_override(
+                float(self._t[i - 1]), float(cw_p)
+            )
             self._u[1] = self._u[1] + (cw_t - pfaults.cw_t_mean_k) * pfaults.met_cw_track
             self._u[3] = self._u[3] + (amb - pfaults.ambient_t_mean_k) * pfaults.oil_ambient_track
             if pfaults.qheat_cw_scaling and pfaults.cw_p_nominal_pa > 0.0:
@@ -660,7 +677,15 @@ class LiveSimulator:
             sp=self._sp[i, :].copy(),
             quality=quality,
             quality_latched=self._quality_latched[i, :].copy() if self._use_quality_state else None,
-            disturbances=self._disturbance_track[i, :].copy(),
+            # Layer 2.6b: reflect any active cw_pump_trip override in
+            # the published disturbance column. The kernel above
+            # already applied the override to ``self._u[4]`` for the
+            # ODE step; here we update the published snapshot so the
+            # dashboard / Lepanto consumer sees the actual CW pressure
+            # rather than the unperturbed baseline track. The
+            # ``self._disturbance_track`` is left untouched so a
+            # future run (or a reset) starts from a clean baseline.
+            disturbances=self._published_disturbances(i),
             xLend=self._xLend[i, :].copy(),
             yLend=self._yLend[i, :].copy(),
         )
@@ -668,6 +693,66 @@ class LiveSimulator:
     # ------------------------------------------------------------------ #
     # Live fault overlay
     # ------------------------------------------------------------------ #
+    def _published_disturbances(self, i: int) -> np.ndarray:
+        """Return the disturbance snapshot for row ``i`` with any
+        active cw_pump_trip override applied to channel 2 (PCW).
+
+        Baseline channels (Tamb, Tcw, PCW) come straight from
+        ``self._disturbance_track[i]``. The PCW channel is overridden
+        when the trip is active so the dashboard / Lepanto consumer
+        sees the actual pressure the kernel used, not the unperturbed
+        baseline.
+
+        Returns a fresh copy so callers can't mutate the track.
+        """
+        row = self._disturbance_track[i, :].copy()
+        if self._disturbance_override is not None and self._disturbance_override.get("channel") == "pcw":
+            # The kernel already applied this same factor on
+            # ``self._u[4]``; here we mirror it on the published
+            # snapshot so the surface matches the underlying state.
+            t_here = float(self._t[i])
+            row[2] = float(self._apply_disturbance_override(t_here, float(row[2])))
+        return row
+
+    def _apply_disturbance_override(self, t: float, cw_p_baseline: float) -> float:
+        """Apply a cw_pump_trip envelope on top of the baseline CW pressure.
+
+        Returns the override-applied CW pressure (Pa). When no override
+        is active (or the trip has expired) the baseline is returned
+        unchanged. The envelope is ramp-down / hold / ramp-up:
+
+            t < start_t              → 1.00
+            start_t <= t < end_t     → linear in/out, held at low_factor
+            t >= end_t               → 1.00
+
+        ``low_factor`` is the floor (0.3 = 70% drop). ``ramp_s`` is the
+        ramp duration at both edges. The function is pure: same input
+        always returns the same output, no side effects.
+
+        Layer 2.6b. See BDSIM_Layer26b_CW_Pump_Trip_Lane.md.
+        """
+        ovr = self._disturbance_override
+        if ovr is None or "channel" not in ovr or ovr["channel"] != "pcw":
+            return cw_p_baseline
+        start_t = float(ovr["start_t"])
+        end_t = float(ovr["end_t"])
+        low_factor = float(ovr.get("low_factor", 0.3))
+        ramp_s = float(ovr.get("ramp_s", 30.0))
+        if t < start_t or t >= end_t:
+            return cw_p_baseline
+        # Ramp-down: start_t → start_t + ramp_s
+        if t < start_t + ramp_s:
+            r = (t - start_t) / ramp_s
+            factor = 1.0 - (1.0 - low_factor) * r
+        # Hold: start_t + ramp_s → end_t - ramp_s
+        elif t < end_t - ramp_s:
+            factor = low_factor
+        # Ramp-up: end_t - ramp_s → end_t
+        else:
+            r = (t - (end_t - ramp_s)) / ramp_s
+            factor = low_factor + (1.0 - low_factor) * r
+        return cw_p_baseline * factor
+
     def _apply_live_sensor_faults(
         self, pv_row: np.ndarray, i: int,
     ) -> tuple[np.ndarray, dict[int, str]]:
