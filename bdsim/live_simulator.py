@@ -309,6 +309,7 @@ class LiveSimulator:
             xLend=xLend_buf,
             yLend=yLend_buf,
             tclean=np.array(self._tclean, dtype=float),
+            quality=self._quality_latched[:self._lt - 1, :].copy(),
         )
 
     # ------------------------------------------------------------------ #
@@ -384,6 +385,16 @@ class LiveSimulator:
         # components for byte-identical reproducibility.
         self._use_dynamic_alpha = pfaults.fouling_dynamic
 
+        # Layer 2.1: quality state adds 6 components when enabled.
+        self._use_quality_state = pfaults.quality_state
+        self._quality_latched = np.zeros((self._lt, 3))
+        self._last_lab_sample_t: float = -np.inf
+        if pfaults.quality_lag_mode == "online":
+            self._lab_period_s = pfaults.online_cycle_s
+        else:
+            self._lab_period_s = pfaults.lab_cycle_s
+        self._pfaults = pfaults                                  # keep for noise levels
+
         # --- exogenous disturbance
         d = settings.exogenous(self._t)
         d[:, 2] = d[:, 2] / p.Mm / 3600.0
@@ -415,11 +426,24 @@ class LiveSimulator:
 
         # Layer 2.5: HEX fouling α is in sv[21] only when the dynamic
         # path is enabled. Legacy mode keeps the state vector at 21
-        # components for byte-identical reproducibility.
-        self._sv = np.zeros((self._lt, len(settings.sv0) + (1 if self._use_dynamic_alpha else 0)))
+        # components for byte-identical reproducibility. Layer 2.1 adds
+        # 6 more components when enabled.
+        sv_width = (
+            len(settings.sv0)
+            + (1 if self._use_dynamic_alpha else 0)
+            + (6 if self._use_quality_state else 0)
+        )
+        self._sv = np.zeros((self._lt, sv_width))
         self._sv[0, :len(settings.sv0)] = settings.sv0
         if self._use_dynamic_alpha:
             self._sv[0, 21] = 0.05                              # HEX fouling α at start, lightly fouled
+        if self._use_quality_state:
+            self._sv[0, 22] = p.fame_eq
+            self._sv[0, 23] = p.water_eq
+            self._sv[0, 24] = p.iv_eq
+            self._sv[0, 25] = p.ffa_ref
+            self._sv[0, 26] = 0.01
+            self._sv[0, 27] = p.iv_eq
         self._sv[0, 18] = settings.sv0[18] * 1e6
 
         self._xLend = np.zeros((self._lt, 6))
@@ -434,6 +458,16 @@ class LiveSimulator:
                                        sfaults.signal, sfaults.a, sfaults.b)
         self._pvAUTO = self._pv[0, self._pvindexAUTO]
 
+        # t=0 quality sample (Layer 2.1) so the dashboard has a value
+        # before the first step completes.
+        if self._use_quality_state:
+            self._quality_latched[0, 0] = self._sv[0, 22] + self._pfaults.lab_noise_fame * np.random.randn()
+            self._quality_latched[0, 1] = self._sv[0, 23] + self._pfaults.lab_noise_water * np.random.randn()
+            self._quality_latched[0, 2] = self._sv[0, 24] + self._pfaults.lab_noise_iv * np.random.randn()
+            self._quality_latched[0, 0] = float(np.clip(self._quality_latched[0, 0], 0.0, 100.0))
+            self._quality_latched[0, 1] = float(np.clip(self._quality_latched[0, 1], 0.0, 5000.0))
+            self._quality_latched[0, 2] = float(np.clip(self._quality_latched[0, 2], 0.0, 200.0))
+
         self._tclean: list[float] = []
         self._factor = _fouling(self._t, pfaults.fouling, pfaults.foulingpar)
 
@@ -446,7 +480,11 @@ class LiveSimulator:
         self._valve_yOLD = self._vpos[0, :].copy()
 
         self._unoiseOLD = armax.unoise.copy()
-        self._rhs = make_rhs(p, use_dynamic_alpha=self._use_dynamic_alpha)
+        self._rhs = make_rhs(
+            p,
+            use_dynamic_alpha=self._use_dynamic_alpha,
+            use_quality_state=self._use_quality_state,
+        )
 
         self._i = 0                                         # current step index
 
@@ -544,6 +582,27 @@ class LiveSimulator:
             p.K2F = p.K2F + (4 * p.visco / np.pi) * p.cv**2 * var
             p.K4F = p.K4F + (8 * p.visco / np.pi) * var
             self._tclean.append(self._t[i])
+
+        # ----------------- quality state post-processing (Layer 2.1)
+        if self._use_quality_state:
+            self._sv[i, 22] = float(np.clip(self._sv[i, 22], 0.0, 100.0))
+            self._sv[i, 23] = float(np.clip(self._sv[i, 23], 0.0, 5000.0))
+            self._sv[i, 24] = float(np.clip(self._sv[i, 24], 0.0, 200.0))
+            self._sv[i, 25] = float(np.clip(self._sv[i, 25], 0.0, 0.5))
+            self._sv[i, 26] = float(np.clip(self._sv[i, 26], 0.0, 0.5))
+            self._sv[i, 27] = float(np.clip(self._sv[i, 27], 0.0, 200.0))
+            if (self._t[i] - self._last_lab_sample_t) >= self._lab_period_s or i == 0:
+                self._quality_latched[i, 0] = self._sv[i, 22] + self._pfaults.lab_noise_fame * np.random.randn()
+                self._quality_latched[i, 1] = self._sv[i, 23] + self._pfaults.lab_noise_water * np.random.randn()
+                self._quality_latched[i, 2] = self._sv[i, 24] + self._pfaults.lab_noise_iv * np.random.randn()
+                self._quality_latched[i, 0] = float(np.clip(self._quality_latched[i, 0], 0.0, 100.0))
+                self._quality_latched[i, 1] = float(np.clip(self._quality_latched[i, 1], 0.0, 5000.0))
+                self._quality_latched[i, 2] = float(np.clip(self._quality_latched[i, 2], 0.0, 200.0))
+                self._last_lab_sample_t = self._t[i]
+            else:
+                self._quality_latched[i, :] = self._quality_latched[i - 1, :]
+        else:
+            self._quality_latched[i, :] = np.nan
 
         # ----------------- measurements (batch path)
         self._xLend[i, :], self._yLend[i, :] = AEmodel(self._sv[i, :], p)

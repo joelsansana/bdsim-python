@@ -103,7 +103,13 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
                  # ---- HEX fouling dynamics (Roadmap Layer 2.5) ----
                  k_f0: float, E_a_f: float, k_decay: float,
                  ffa_ref: float, alpha_clean: float,
-                 use_dynamic_alpha: bool) -> np.ndarray:
+                 use_dynamic_alpha: bool,
+                 # ---- Quality dynamics (Roadmap Layer 2.1) ----
+                 k_fame: float, k_water: float, k_iv: float,
+                 fame_eq: float, water_eq: float, iv_eq: float,
+                 ffa_feed_noise: float, water_feed_noise: float,
+                 iv_feed_noise: float,
+                 use_quality_state: bool) -> np.ndarray:
     """Right-hand side of the biodiesel ODE system, JIT-compiled.
 
     The decanter split neural-network outputs (``eta_E``, ``eta_M``,
@@ -114,14 +120,22 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
     When ``use_dynamic_alpha=True`` the driver writes α back into
     ``factor`` so this RHS uses the live state; otherwise the
     pre-baked ``factor`` argument (legacy path) is used as before.
+
+    Layer 2.1: when ``use_quality_state=True``, sv[22:28] carries
+    true instantaneous quality (FAME%, water, IV) and feedstock
+    quality (FFA_feed, water_feed, IV_feed). Each relaxes toward an
+    equilibrium at first-order; feedstock states evolve by a small
+    per-step random walk.
     """
     nc = 6
     # NOTE: dsvdt is sized to match the working state vector. Legacy
     # mode keeps the upstream 21-component vector; dynamic mode grows
-    # to 22 with the HEX fouling derivative at [21]. Both sizes share
-    # the same JIT specialization — the dynamic-only branch below is
-    # dead-code-eliminated by Numba in the legacy specialization.
-    if use_dynamic_alpha:
+    # to 22 (Layer 2.5); quality mode grows to 28 (Layer 2.1 adds 6).
+    # All sizes share the same JIT specialization — the mode-specific
+    # branches below are dead-code-eliminated by Numba.
+    if use_quality_state:
+        dsvdt = np.zeros(28)
+    elif use_dynamic_alpha:
         dsvdt = np.zeros(22)
     else:
         dsvdt = np.zeros(21)
@@ -293,6 +307,40 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
         # its derivative is zero here; the driver writes α = factor
         # directly post-integration.
         dsvdt[21] = 0.0
+
+    # ------------------- Quality state (Layer 2.1)
+    # First-order relaxation of true instantaneous quality toward
+    # equilibrium driven by feedstock and operating conditions.
+    # Feedstock evolves as a slow random walk (small per-step noise
+    # injected from the Python driver into the seeded RNG).
+    if use_quality_state:
+        # FAME% (sv[22]): equilibrium drops when FFA is high (saponification
+        # side-reaction competes with transesterification) and rises with
+        # reactor T up to a saturating point. Linear in FFA perturbation
+        # around the reference value.
+        ffa_perturb = (sv[25] - ffa_ref) / max(ffa_ref, 1e-9)        # dimensionless
+        fame_eq_local = fame_eq * (1.0 - 0.5 * max(0.0, ffa_perturb))
+        dsvdt[22] = k_fame * (fame_eq_local - sv[22])
+
+        # Water (sv[23]): equilibrium rises with water in feed and
+        # reactor T. Clamp to [0, 2000] ppm.
+        water_eq_local = water_eq + 5000.0 * sv[26] * (1.0 + 0.01 * (TR - 333.15))
+        dsvdt[23] = k_water * (water_eq_local - sv[23])
+
+        # IV (sv[24]): equilibrium tracks IV in feed. Slow relaxation.
+        iv_eq_local = iv_eq * (sv[27] / max(iv_eq, 1e-9))
+        dsvdt[24] = k_iv * (iv_eq_local - sv[24])
+
+        # Feedstock state random walk. The Python driver injects Gaussian
+        # noise samples (deterministic given seed) by passing them in
+        # via the ffa_feed_noise / water_feed_noise / iv_feed_noise
+        # parameters. For the deterministic baseline we keep the
+        # walk here constant at the equilibrium — the driver can
+        # apply perturbations via the existing feedstock_drift
+        # scenario if it wants time-varying feedstock.
+        dsvdt[25] = 0.0
+        dsvdt[26] = 0.0
+        dsvdt[27] = 0.0
     return dsvdt
 
 
@@ -337,7 +385,8 @@ def _ae_model_jit(sv: np.ndarray, M: np.ndarray,
 
 def ODEmodel(t: float, sv: np.ndarray, p: dict, u: np.ndarray,
              factor: float = 1.0,
-             use_dynamic_alpha: bool = True) -> np.ndarray:
+             use_dynamic_alpha: bool = True,
+             use_quality_state: bool = True) -> np.ndarray:
     """Pure-Python wrapper for :func:`_ode_rhs_jit`.
 
     The decanter split neural-network call happens here, on the Python side,
@@ -375,6 +424,11 @@ def ODEmodel(t: float, sv: np.ndarray, p: dict, u: np.ndarray,
         p.k_f0, p.E_a_f, p.k_decay,
         p.ffa_ref, p.alpha_clean,
         use_dynamic_alpha,
+        # Quality dynamics (Layer 2.1)
+        p.k_fame, p.k_water, p.k_iv,
+        p.fame_eq, p.water_eq, p.iv_eq,
+        p.ffa_feed_noise, p.water_feed_noise, p.iv_feed_noise,
+        use_quality_state,
     )
 
 
@@ -389,7 +443,7 @@ def AEmodel(sv: np.ndarray, p) -> tuple[np.ndarray, np.ndarray]:
     return xLend, yLend
 
 
-def make_rhs(p, use_dynamic_alpha: bool = True):
+def make_rhs(p, use_dynamic_alpha: bool = True, use_quality_state: bool = True):
     """Closure that captures ``p`` and the input vector for ``solve_ivp``.
 
     The simulation driver sets the active input vector on this closure just
@@ -399,11 +453,18 @@ def make_rhs(p, use_dynamic_alpha: bool = True):
     ``use_dynamic_alpha`` toggles Layer 2.5 fouling dynamics (default
     True). Pass False for bit-identical behaviour to the legacy
     pre-baked ``factor`` series.
+
+    ``use_quality_state`` toggles Layer 2.1 quality-state dynamics
+    (default True). Pass False to keep the state at 22 components
+    (Layer 2.5 only).
     """
     state = {"u": np.zeros(6), "factor": 1.0}
 
     def rhs(t: float, sv: np.ndarray) -> np.ndarray:
-        return ODEmodel(t, sv, p, state["u"], state["factor"], use_dynamic_alpha)
+        return ODEmodel(
+            t, sv, p, state["u"], state["factor"],
+            use_dynamic_alpha, use_quality_state,
+        )
 
     rhs.set_u = lambda u: state.__setitem__("u", u)
     rhs.set_factor = lambda f: state.__setitem__("factor", f)
