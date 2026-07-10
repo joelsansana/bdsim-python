@@ -312,6 +312,24 @@ class ProcessFaults:
     valve_stiction_floor_pct: float = 0.0                      # lower bound; can be negative in theory but never here
     valve_stiction_ceiling_pct: float = 60.0                   # upper bound — at 60 % the loop is already unstable
 
+    # ------------------------------------------------------------------
+    # Layer 2.8: NIR/IR virtual spectrum sensor (port of upstream
+    # ``comp_spectrum.m``). Master switch defaults to ``False`` so
+    # the legacy 21/22-component state fingerprint is preserved.
+    # When enabled, the spectrum generator fires every
+    # ``spctr_t`` seconds and attaches a ``SpectrumSample`` to
+    # ``StepResult.spectra`` at those times (None between fires).
+    # ------------------------------------------------------------------
+    spectrum_enabled: bool = False
+    spctr_t: float = 3600.0                                     # spectrum sampling period (s), default 1 h
+    spctr_cs: int = 2                                           # Skoog photometric noise: 0..3
+    spctr_snr_db: float = 30.0                                  # additive white Gaussian noise SNR
+    spctr_k: float = 0.03                                       # photometric noise scale (Skoog: 0.3%T)
+    spctr_drift_a: float = 0.01                                 # scatter baseline (a + b*wn + c*abs)
+    spctr_drift_b: float = 0.0001
+    spctr_drift_c: float = 1.05
+    spectra_ref_path: str | None = None                         # None → bundled bdsim/data/spectra_ref.csv
+
 
 # -----------------------------------------------------------------------------
 # Sensor faults
@@ -644,6 +662,7 @@ class StepResult:
     disturbances: np.ndarray | None = None                  # Layer 2.6: (3,) [Tamb, Tcw, Pcw]; None when off
     xLend: np.ndarray | None = None                         # washer/dryer output, (6,)
     yLend: np.ndarray | None = None                         # dryer mass fractions, (6,)
+    spectra: object | None = None                           # Layer 2.8: SpectrumSample at fire times, else None
 
 
 # -----------------------------------------------------------------------------
