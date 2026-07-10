@@ -312,6 +312,33 @@ class ProcessFaults:
     valve_stiction_floor_pct: float = 0.0                      # lower bound; can be negative in theory but never here
     valve_stiction_ceiling_pct: float = 60.0                   # upper bound — at 60 % the loop is already unstable
 
+    # ------------------------------------------------------------------
+    # Layer 2.8b: windowed five-mode fouling stepper (port of
+    # upstream ``fouling.m``). Modes 4 and 5 are stochastic ARMAX
+    # fault-injection paths; the LiveSimulator kernel applies them
+    # during an active fault window, then control returns to
+    # Layer 2.5 (continuous α) or to the static legacy series
+    # (factor = 1/(1 + Rf)).
+    #
+    # Priority when multiple paths are configured:
+    #   continuous α  >  windowed mode 4/5  >  static legacy series.
+    #
+    # The ``fouling_mode`` integer matches the upstream
+    # ``pfaults.fouling`` switch case so a ProcessFaults(...)
+    # override is a drop-in for legacy code. The
+    # ``fouling_mode_active_*`` triple is the runtime overlay
+    # written by the dashboard fault handler (FOULING_MODE_4 /
+    # FOULING_MODE_5 events); defaults to "off" so a no-fault
+    # sim is byte-identical to the Layer 2.7 fingerprint.
+    # ------------------------------------------------------------------
+    fouling_mode: int = 0                                      # 0..5 — global mode selector (matches upstream)
+    fouling_mode_xRG_weight: bool = True                       # if True, mode-4 target includes xRG (glycerol coupling)
+    fouling_ar_eps_std: float = 5e-4                           # ARMAX innovation σ (modes 4/5) — matches upstream
+    fouling_mode_default_window_s: float = 3600.0              # default window if the FaultSpec doesn't set one
+    fouling_mode_active_mode: int = 0                          # 0 = no active window; 4 or 5 = ARMAX mode active
+    fouling_mode_active_end_t: float = -1.0                    # sim time at which the active window expires
+    fouling_mode_active_seed: int | None = None                 # optional seed for the ARMAX RNG (reproducibility)
+
 
 # -----------------------------------------------------------------------------
 # Sensor faults
@@ -671,6 +698,14 @@ class Results:
                                                               # Layer 2.1 — present when quality_state=True; NaN rows otherwise
     disturbances: np.ndarray | None = None                    # Layer 2.6: external disturbance track,
                                                               # (lt-1, 3): [Tamb_K, Tcw_K, Pcw_Pa].
+    factor: np.ndarray | None = None                          # Layer 2.8b: HEX fouling factor applied at each
+                                                              # step (length lt-1). Populated by both the
+                                                              # batch ``run_with`` path and the
+                                                              # ``LiveSimulator`` path so downstream
+                                                              # consumers (tests, dashboard, Lepanto
+                                                              # correlation) can inspect which path
+                                                              # (continuous α / windowed mode 4-5 /
+                                                              # static legacy) the kernel used.
 
     # Display-unit conversions (matching upstream's final plotting block)
     def in_display_units(self) -> "Results":

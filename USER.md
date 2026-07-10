@@ -111,6 +111,40 @@ while not sim.done:
     print(s.t, s.disturbances[2] / 1e5)  # PCW in bar
 ```
 
+### Trigger a fouling-mode window (Layer 2.8b)
+
+```python
+from bdsim import LiveSimulator
+from bdsim.config import ProcessFaults
+
+# Layer 2.8b: windowed five-mode fouling. Modes 4 and 5 are
+# stochastic ARMAX noise injections on the heat-exchanger
+# efficiency factor. Activate a window mid-run via the live
+# mutator API; the kernel applies the ARMAX stepper during the
+# window and falls back to Layer 2.5 continuous α (or the static
+# legacy series) afterwards.
+sim = LiveSimulator(
+    pfaults=ProcessFaults(
+        fouling_dynamic=True,           # Layer 2.5 α path stays active
+        fouling_ar_eps_std=5e-4,        # ARMAX innovation σ
+    ),
+    seed=42,
+)
+# Fire mode-4 (mean-reverting ARMAX) for 600 s starting now
+info = sim.activate_fouling_mode_window(mode=4, duration_s=600.0, seed=11)
+print(f"window: start={info['start_t']}, end={info['end_t']}")
+while not sim.done:
+    s = sim.step()
+    # Results.factor (returned by run_to_completion) records the
+    # actual factor the kernel applied each step. During the window
+    # you'll see ARMAX noise; after the window it returns to α.
+    print(s.t, sim.get_fouling_mode_state())
+```
+
+To turn off the window early: ``sim.clear_fouling_mode_window()``.
+The snapshot/restore API is also exposed via
+``sim.get_fouling_mode_state()`` for replay scenarios.
+
 ### Read the live disturbance track
 
 ```python

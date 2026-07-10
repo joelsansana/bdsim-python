@@ -66,6 +66,7 @@ from .simulation import (
     _PIDState,
     _stiction_step,
 )
+from .fouling_modes import FoulingMode, FoulingModeStepper, factor_for_window
 
 logger = logging.getLogger(__name__)
 
@@ -463,6 +464,85 @@ class LiveSimulator:
             }
         return out
 
+    # ------------------------------------------------------------------
+    # Layer 2.8b: windowed fouling mode (modes 4 / 5) mutators
+    # ------------------------------------------------------------------
+    def activate_fouling_mode_window(
+        self,
+        mode: int | FoulingMode,
+        duration_s: float,
+        seed: int | None = None,
+    ) -> dict:
+        """Activate a windowed fouling-mode fault (Layer 2.8b).
+
+        During the window the kernel uses the
+        :class:`~bdsim.fouling_modes.FoulingModeStepper` to produce
+        ``factor`` per step instead of the Layer 2.5 α path or the
+        legacy pre-baked series. When the window expires control
+        returns to whichever path is higher priority (Layer 2.5
+        continuous α if enabled, else the static legacy series).
+
+        Args:
+            mode: 4 or 5 (other modes are not windowed; they don't
+                have stochastic state).
+            duration_s: how long the window lasts, in sim seconds.
+                Defaults to ``pfaults.fouling_mode_default_window_s``
+                when ``None``.
+            seed: optional RNG seed for the ARMAX stepper during
+                this window. ``None`` → fresh seed derived from
+                the current rng so consecutive windows differ.
+
+        Returns:
+            A dict with the active mode, end_t, and window length
+            for diagnostic echo on the dashboard.
+        """
+        m = int(mode)
+        if m not in (FoulingMode.ARMAX_NOISE, FoulingMode.ARMAX_PURE_NOISE):
+            raise ValueError(
+                f"fouling_mode_window only supports modes 4 or 5; got {m!r}"
+            )
+        if duration_s is None or duration_s <= 0.0:
+            raise ValueError(
+                f"duration_s must be positive; got {duration_s!r}"
+            )
+        pfaults = self.pfaults
+        if seed is not None:
+            self._fouling_mode_rng = np.random.default_rng(int(seed))
+        pfaults.fouling_mode_active_mode = m
+        pfaults.fouling_mode_active_end_t = float(self.t) + float(duration_s)
+        # Reset the ARMAX state so each window starts fresh
+        self._fouling_stepper.reset()
+        return {
+            "mode": m,
+            "start_t": float(self.t),
+            "end_t": float(pfaults.fouling_mode_active_end_t),
+            "duration_s": float(duration_s),
+        }
+
+    def clear_fouling_mode_window(self) -> dict:
+        """Deactivate the windowed fouling mode. Idempotent.
+
+        Returns the cleared envelope (empty if no window was active).
+        """
+        pfaults = self.pfaults
+        prev = {
+            "mode": int(pfaults.fouling_mode_active_mode),
+            "end_t": float(pfaults.fouling_mode_active_end_t),
+        }
+        pfaults.fouling_mode_active_mode = 0
+        pfaults.fouling_mode_active_end_t = -1.0
+        self._fouling_stepper.reset()
+        return prev
+
+    def get_fouling_mode_state(self) -> dict:
+        """Snapshot the windowed fouling state for diagnostics / replay."""
+        pfaults = self.pfaults
+        return {
+            "active_mode": int(pfaults.fouling_mode_active_mode),
+            "active_end_t": float(pfaults.fouling_mode_active_end_t),
+            "stepper_state": self._fouling_stepper.snapshot(),
+        }
+
     @property
     def done(self) -> bool:
         """True once the configured end time has been reached."""
@@ -597,6 +677,7 @@ class LiveSimulator:
             tclean=np.array(self._tclean, dtype=float),
             quality=self._quality_latched[:self._lt - 1, :].copy(),
             disturbances=self._disturbance_track[:self._lt - 1, :].copy(),
+            factor=self._factor_history[:self._lt - 1].copy(),
         )
 
     # ------------------------------------------------------------------ #
@@ -800,6 +881,46 @@ class LiveSimulator:
         self._tclean: list[float] = []
         self._factor = _fouling(self._t, pfaults.fouling, pfaults.foulingpar)
 
+        # Layer 2.8b: per-step factor recording buffer. Populated by
+        # the priority-aware selection block in ``_advance_one_step``
+        # so callers / tests can inspect which path was active at
+        # each step. Sized ``lt`` and indexed ``[i]`` (the end-of-step
+        # factor that the kernel actually applied).
+        self._factor_history = np.empty(self._lt, dtype=float)
+        # factor at t=0. With Layer 2.5 dynamic α the initial α is
+        # 0.05 → factor = 1/(1+0.05). Legacy mode: factor[0] = 1
+        # (no fouling at t=0). Windowed mode is inactive at t=0 so
+        # the legacy value applies.
+        if self._use_dynamic_alpha:
+            self._factor_history[0] = float(self._sv[0, 21])
+        else:
+            self._factor_history[0] = float(self._factor[0])
+
+        # Layer 2.8b: windowed five-mode fouling stepper. Lives
+        # alongside the pre-baked legacy factor series; the kernel
+        # picks one of three paths per step:
+        #   1) continuous α  (sv[21] when fouling_dynamic=True)
+        #   2) windowed mode 4/5  (this stepper, when active)
+        #   3) static legacy factor[i]
+        # Priority is ``1 > 2 > 3`` per the Layer 2.8b plan.
+        # The ARMAX RNG is seeded from ``pfaults.fouling_mode_active_seed``
+        # (or from a fresh default_rng) so that scenario replays are
+        # deterministic.
+        self._fouling_stepper = FoulingModeStepper(
+            foulingpar=pfaults.foulingpar,
+            ar_eps_std=pfaults.fouling_ar_eps_std,
+            xRG_weight=pfaults.fouling_mode_xRG_weight,
+        )
+        if pfaults.fouling_mode_active_seed is not None:
+            self._fouling_mode_rng = np.random.default_rng(
+                int(pfaults.fouling_mode_active_seed)
+            )
+        else:
+            # Process-local default_rng — fresh each sim build, so
+            # scenarios that don't pin a seed still get reproducible
+            # behaviour for the lifetime of this LiveSimulator instance.
+            self._fouling_mode_rng = np.random.default_rng()
+
         # --- valve stiction state
         self._nvalves = len(vfaults.uindex)
         self._valve_duOLD = np.zeros(self._nvalves)
@@ -942,11 +1063,43 @@ class LiveSimulator:
         uu = self._u.copy()
         uu[vfaults.uindex - 1] = self._vpos[i, :]
         self._rhs.set_u(uu)
-        # Layer 2.5: factor selection — same convention as simulation.py.
+        # Layer 2.5 / 2.8b: factor selection with explicit priority:
+        #   1) continuous α (Layer 2.5) — when fouling_dynamic=True
+        #   2) windowed mode 4/5 (Layer 2.8b) — when fouling_mode_active
+        #   3) static legacy factor[i] — pre-baked series
+        # Selection mirrors the simulation.py priority, so the live and
+        # batch paths produce identical factor trajectories for any
+        # given fault schedule.
+        t_now = float(self._t[i - 1])
+        mode_active = (
+            pfaults.fouling_mode_active_mode in (FoulingMode.ARMAX_NOISE,
+                                                 FoulingMode.ARMAX_PURE_NOISE)
+            and t_now < float(pfaults.fouling_mode_active_end_t)
+        )
         if self._use_dynamic_alpha:
-            self._rhs.set_factor(self._sv[i - 1, 21])
+            applied_factor = float(self._sv[i - 1, 21])
+            self._rhs.set_factor(applied_factor)
+        elif mode_active:
+            # xRG is sv[5] (reactor glycerol mole fraction, 0-based).
+            # Falls back to 0.0 if the state slot is unavailable
+            # (e.g. legacy 21-component state with quality_state=False).
+            xrg = float(self._sv[i - 1, 5]) if self._sv.shape[1] > 5 else 0.0
+            factor_windowed, _ = factor_for_window(
+                stepper=self._fouling_stepper,
+                t=t_now,
+                mode=int(pfaults.fouling_mode_active_mode),
+                xRG=xrg,
+                rng=self._fouling_mode_rng,
+            )
+            applied_factor = factor_windowed
+            self._rhs.set_factor(applied_factor)
         else:
-            self._rhs.set_factor(self._factor[i])
+            applied_factor = float(self._factor[i])
+            self._rhs.set_factor(applied_factor)
+        # Layer 2.8b: record the applied factor so callers can inspect
+        # which path (continuous α / windowed / static) the kernel
+        # used for this step. Cheap (1 float per step).
+        self._factor_history[i] = applied_factor
         sv_init = self._sv[i - 1, :].copy()
         sol = solve_ivp(self._rhs, (self._t[i - 1], self._t[i]), sv_init,
                         method="RK45", rtol=1e-3, atol=1e-6,
