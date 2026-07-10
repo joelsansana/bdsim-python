@@ -65,7 +65,9 @@ bdsim/
 ├── kinetics.py         # rxrates (transesterification kinetics)
 ├── split_nn.py         # DecanterSplitNet (PyTorch MLP) + numpy split()
 ├── ode.py              # ODEmodel, AEmodel
+├── fouling_modes.py    # Layer 2.8b: five-mode fouling factor stepper
 ├── simulation.py       # run, run_with — the main driver
+├── live_simulator.py   # LiveSimulator — per-step driver for the dashboard
 ├── plots.py            # 9-figure matplotlib block + CSV writer
 └── cli.py              # `python -m bdsim` entry point
 tests/
