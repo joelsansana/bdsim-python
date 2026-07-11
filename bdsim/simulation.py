@@ -768,4 +768,5 @@ def run_with(
         tclean=np.array(tclean),
         quality=quality_latched[:-1, :],
         disturbances=disturbances_out,
+        factor=factor[:-1],
     )

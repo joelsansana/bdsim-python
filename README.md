@@ -68,9 +68,10 @@ bdsim/
 ├── spectra.py          # Layer 2.8 NIR/IR virtual spectrum sensor (comp_spectrum)
 ├── data/
 │   └── spectra_ref.csv # 6 species × 631 NIR channels, GPL-3 (Fernandes/Strelet 2019)
+├── fouling_modes.py    # Layer 2.8b: five-mode fouling factor stepper
 ├── simulation.py       # run, run_with — the main driver
+├── live_simulator.py   # LiveSimulator — per-step driver for the dashboard
 ├── plots.py            # 9-figure matplotlib block + CSV writer
-├── live_simulator.py   # LiveSimulator — stateful, per-step driver for the dashboard
 └── cli.py              # `python -m bdsim` entry point
 tests/
 ├── test_smoke.py             # smoke tests (run with `pytest`)
@@ -79,7 +80,9 @@ tests/
 ├── test_layer24_degradation.py # Layer 2.4 pump_health + valve_stiction_pct
 ├── test_layer26b_cw_pump.py  # Layer 2.6b cw_pump_trip mid-run override
 ├── test_layer27_knobs.py     # Layer 2.7 operator-driven disturbance knobs
-└── test_layer28a_spectra.py  # Layer 2.8 NIR/IR spectrum sensor
+├── test_layer28a_spectra.py  # Layer 2.8 NIR/IR spectrum sensor
+├── test_layer28b_fouling_modes.py # Layer 2.8b fouling stepper (offline)
+└── test_layer28b_live_fouling.py  # Layer 2.8b LiveSimulator wiring + priority
 results/                # default output directory (created on first run)
 ```
 
