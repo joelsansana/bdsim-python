@@ -34,18 +34,22 @@ bdsim/
 ├── kinetics.py         # rxrates (transesterification kinetics)
 ├── split_nn.py         # DecanterSplitNet (PyTorch MLP) + numpy split()
 ├── ode.py              # ODEmodel, AEmodel — Numba-JIT compiled
+├── spectra.py          # Layer 2.8 NIR/IR virtual spectrum sensor (comp_spectrum)
+├── data/
+│   └── spectra_ref.csv # 6 species × 631 NIR channels, GPL-3 (Fernandes/Strelet 2019)
 ├── simulation.py       # run, run_with — the main driver (batch)
 ├── live_simulator.py   # LiveSimulator — stateful, per-step driver for the dashboard
 ├── plots.py            # 9-figure Plotly block + CSV writer
 └── cli.py              # `python -m bdsim` entry point
 
 tests/
-├── test_smoke.py            # 12 smoke tests, fingerprint regression
+├── test_smoke.py            # 14 smoke tests, fingerprint regression
 ├── test_live_simulator.py   # LiveSimulator + byte-identical contract to run_with
 ├── test_disturbances.py     # Layer 2.6 external disturbance track
 ├── test_layer24_degradation.py # Layer 2.4 pump_health + valve_stiction_pct
 ├── test_layer26b_cw_pump.py # Layer 2.6b cw_pump_trip mid-run override
-└── test_layer27_knobs.py    # Layer 2.7 operator-driven disturbance knobs
+├── test_layer27_knobs.py    # Layer 2.7 operator-driven disturbance knobs
+└── test_layer28a_spectra.py # Layer 2.8 NIR/IR spectrum sensor
 
 results/                # default output dir (created on first run)
 docs/                   # Fernandes 2019 PDF + manual PDF (upstream refs)
@@ -72,7 +76,7 @@ NOTES.md                # historical: upstream-faithful bugs we found and fixed
 See `~/Documents/Notas/Lepanto/BDSIM_Roadmap.md` for the authoritative roadmap. This repo's coverage:
 
 - ✅ Step 1 (live sim driver), Step 2 (MQTT publish is on the dashboard side), Step 4 (live fault injection), Step 5 (sensor failure modes), Step 8 (scenario runner is on the dashboard side)
-- ✅ Layer 2.1 (quality latching — `quality_state=True` mode), Layer 2.5 (HEX fouling as continuous state, `fouling_dynamic=True` mode), Layer 2.6 (external disturbances), Layer 2.6b (cw_pump_trip mid-run override), Layer 2.7 (operator-driven disturbance schedule), Layer 2.4 (pump_health + valve_stiction_pct as continuous state — `pump_wear=True` / `valve_wear=True`)
+- ✅ Layer 2.1 (quality latching — `quality_state=True` mode), Layer 2.5 (HEX fouling as continuous state, `fouling_dynamic=True` mode), Layer 2.6 (external disturbances), Layer 2.6b (cw_pump_trip mid-run override), Layer 2.7 (operator-driven disturbance schedule), Layer 2.4 (pump_health + valve_stiction_pct as continuous state — `pump_wear=True` / `valve_wear=True`), Layer 2.8a (NIR/IR virtual spectrum sensor — `spectrum_enabled=True`)
 - ⏳ Layer 2.1 `quality_latched` code review (Joel owes) — pending
 
 ## Coordination with bdsim-dashboard

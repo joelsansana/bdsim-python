@@ -124,6 +124,34 @@ sim.step()                                # initial sample
 print(sim._disturbance_track[:5])        # (5, 3) [Tamb_K, Tcw_K, Pcw_Pa]
 ```
 
+### Capture a NIR/IR spectrum sample (Layer 2.8a)
+
+```python
+from bdsim import LiveSimulator
+from bdsim.config import ProcessFaults
+
+sim = LiveSimulator(
+    pfaults=ProcessFaults(
+        spectrum_enabled=True,
+        spctr_t=900.0,                  # fire every 15 minutes
+    ),
+    seed=42,
+)
+while not sim.done:
+    s = sim.step()
+    if s.spectra is not None:
+        print(s.spectra.t, s.spectra.sim_t)
+        print('  qc_MG :', s.spectra.qc_reactor_mg)
+        print('  qc_TG :', s.spectra.qc_reactor_tg)
+        print('  reactor absorbance:', s.spectra.reactor.shape)  # (631,)
+```
+
+The spectrum sensor is **post-process** — it reads the state vector
+after each ODE step but never writes back. The legacy fingerprint
+(`sv=6f61eb53...`) is preserved with `spectrum_enabled=True`.
+
+```
+
 ## API reference (essentials)
 
 ### `run_with(settings, pfaults, sfaults, vfaults, armax, pid, seed, verbose) -> Results`
@@ -148,6 +176,7 @@ class StepResult:
     quality: dict[int, str]         # sensor index → "good"/"uncertain"/"bad"
     quality_latched: np.ndarray | None  # Layer 2.1 latched QA values
     disturbances: np.ndarray | None     # Layer 2.6 [Tamb_K, Tcw_K, Pcw_Pa]
+    spectra: SpectrumSample | None       # Layer 2.8 NIR/IR sample at fire times
     xLend: np.ndarray
     yLend: np.ndarray
 ```

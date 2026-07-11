@@ -65,11 +65,21 @@ bdsim/
 ├── kinetics.py         # rxrates (transesterification kinetics)
 ├── split_nn.py         # DecanterSplitNet (PyTorch MLP) + numpy split()
 ├── ode.py              # ODEmodel, AEmodel
+├── spectra.py          # Layer 2.8 NIR/IR virtual spectrum sensor (comp_spectrum)
+├── data/
+│   └── spectra_ref.csv # 6 species × 631 NIR channels, GPL-3 (Fernandes/Strelet 2019)
 ├── simulation.py       # run, run_with — the main driver
 ├── plots.py            # 9-figure matplotlib block + CSV writer
+├── live_simulator.py   # LiveSimulator — stateful, per-step driver for the dashboard
 └── cli.py              # `python -m bdsim` entry point
 tests/
-└── test_smoke.py       # smoke tests (run with `pytest`)
+├── test_smoke.py             # smoke tests (run with `pytest`)
+├── test_live_simulator.py    # LiveSimulator + byte-identical contract to run_with
+├── test_disturbances.py      # Layer 2.6 external disturbance track
+├── test_layer24_degradation.py # Layer 2.4 pump_health + valve_stiction_pct
+├── test_layer26b_cw_pump.py  # Layer 2.6b cw_pump_trip mid-run override
+├── test_layer27_knobs.py     # Layer 2.7 operator-driven disturbance knobs
+└── test_layer28a_spectra.py  # Layer 2.8 NIR/IR spectrum sensor
 results/                # default output directory (created on first run)
 ```
 

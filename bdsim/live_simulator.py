@@ -141,6 +141,28 @@ class LiveSimulator:
         # the trip expires. Single-slot matches ``power_dip``
         # semantics — a second trip replaces the first.
         self._disturbance_override: dict[str, Any] | None = None
+        # Layer 2.8: NIR/IR spectrum generator. Built once at
+        # construction so the reference spectra CSV is loaded lazily
+        # only when the sensor is enabled. ``None`` when
+        # ``pfaults.spectrum_enabled`` is False — saves the CSV read
+        # on every LiveSimulator instantiation.
+        self._spectrum_generator: SpectrumGenerator | None = None
+        if pfaults is not None and pfaults.spectrum_enabled:
+            from .spectra import SpectrumGenerator, SpectrumConfig
+            self._spectrum_generator = SpectrumGenerator(
+                SpectrumConfig(
+                    enabled=True,
+                    spctr_t=pfaults.spctr_t,
+                    cs=pfaults.spctr_cs,
+                    snr_db=pfaults.spctr_snr_db,
+                    k=pfaults.spctr_k,
+                    drift_a=pfaults.spctr_drift_a,
+                    drift_b=pfaults.spctr_drift_b,
+                    drift_c=pfaults.spctr_drift_c,
+                    spectra_ref_path=pfaults.spectra_ref_path,
+                    seed=seed,
+                )
+            )
 
     # ------------------------------------------------------------------ #
     # Lifecycle
@@ -834,6 +856,7 @@ class LiveSimulator:
             disturbances=self._disturbance_track[0, :].copy(),
             xLend=self._xLend[0, :].copy(),
             yLend=self._yLend[0, :].copy(),
+            spectra=self._maybe_sample_spectrum(0, 0),
         )
 
     def _advance_one_step(self, i: int) -> StepResult:
@@ -1042,6 +1065,7 @@ class LiveSimulator:
             disturbances=self._published_disturbances(i),
             xLend=self._xLend[i, :].copy(),
             yLend=self._yLend[i, :].copy(),
+            spectra=self._maybe_sample_spectrum(i, self._t[i]),
         )
 
     # ------------------------------------------------------------------ #
@@ -1167,6 +1191,33 @@ class LiveSimulator:
         """Build a 'good' quality map (used for the initial-condition sample
         before any fault is applied)."""
         return {k: "good" for k in range(self.sensor_faults.nsensors)}
+
+    # ------------------------------------------------------------------ #
+    # Layer 2.8: spectrum sampler (post-process, fired per spctr_t)
+    # ------------------------------------------------------------------ #
+    def _maybe_sample_spectrum(self, i: int, t: float):
+        """Fire the spectrum sensor at step ``i`` if cadence has elapsed.
+
+        Returns ``None`` when:
+        - the spectrum sensor is disabled (``pfaults.spectrum_enabled=False``)
+        - or ``spctr_t`` has not elapsed since the previous fire.
+
+        Caller must attach the result to ``StepResult.spectra``
+        verbatim — it is already None-when-disabled and None-when-
+        not-firing.
+        """
+        gen = self._spectrum_generator
+        if gen is None:
+            return None
+        # Reactor composition is sv[0:6]; light phase is sv[7:13];
+        # heavy phase is sv[13:16] (3-species).
+        sv_row = self._sv[i, :]
+        x_reactor = sv_row[0:6]
+        x_light = sv_row[7:13]
+        x_heavy = sv_row[13:16]
+        return gen.maybe_sample(t=float(t), step_idx=i,
+                                x_reactor=x_reactor, x_light=x_light,
+                                x_heavy=x_heavy)
 
     # ------------------------------------------------------------------ #
     # Context manager (Q2 approved: yes)

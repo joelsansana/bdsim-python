@@ -29,5 +29,8 @@ test = [
 include = ["bdsim*"]
 exclude = ["tests*"]
 
+[tool.setuptools.package-data]
+bdsim = ["data/*.csv"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
