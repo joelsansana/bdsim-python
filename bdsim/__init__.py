@@ -25,7 +25,7 @@ Public API
 - :class:`bdsim.live_simulator.LiveSimulator` — stateful per-step driver.
   Mutate ``sensor_faults.bias`` / ``.stuck`` / ``.dropouts`` between
   :meth:`~bdsim.live_simulator.LiveSimulator.step` calls to inject
-  faults mid-run (Roadmap step 4 — Lepanto FDE integration).
+  faults mid-run (live fault injection).
 
 The port is faithful to the MATLAB semantics but uses modern Python idioms
 (type hints, dataclasses, NumPy vectorisation, scipy.integrate.solve_ivp).

@@ -26,8 +26,8 @@ used in the energy balance ``Theat = TR - factor * Qheat / (NR * cpmolR)``:
 Priority when all three are configured:
 ``continuous α  >  windowed mode 4/5  >  static``.
 
-Modes 0–3 of the upstream are ported for completeness but the Lepanto
-demo only exercises modes 4 and 5; modes 1 and 3 are wired into the
+Modes 0–3 of the upstream are ported for completeness but the bdsim-dashboard
+scenario catalog only exercises modes 4 and 5; modes 1 and 3 are wired into the
 ``FoulingModeStepper`` because they're well-defined and serve as
 sanity-check references, mode 0 is the trivial off state, and mode 2
 (exponential recovery) is documented as "weird" in the upstream and

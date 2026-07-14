@@ -6,14 +6,14 @@ Quick orientation for any agent (human or AI) opening this repo cold.
 
 A Python port of the BDSIM MATLAB/Octave simulator by Natércia C. P. Fernandes (University of Coimbra, 2019). Models a biodiesel plant (filter → reactor → heat exchanger → decanter → washer → dryer) with sensors, PID controllers, valve stiction, and a decanter split neural network.
 
-**This is the simulation engine.** It is the "plant" the dashboard and the Lepanto FDE model both interface with. The bdsim-dashboard repo wraps it as a live, MQTT-bridged process. This repo is the math.
+**This is the simulation engine.** It is the "plant" the dashboard wraps as a live, MQTT-bridged process. This repo is the math.
 
 ## Hard rule
 
-**Faithful port + Lepanto's fault-detection research.** Two callers:
+**Faithful port + reproducible trajectories.** Two callers:
 
-1. **bdsim-dashboard** (operator console) — runs the sim live, exposes it over HTTP/MQTT. Needs deterministic, step-by-step control.
-2. **Lepanto R&D** (Joel + Eugeniu, off-the-books) — feeds sim trajectories into correlation / fault-detection models. Needs batch runs with reproducible seeds and clean fingerprint pins.
+1. **bdsim-dashboard** (operator console, separate repo) — runs the sim live, exposes it over HTTP/MQTT. Needs deterministic, step-by-step control.
+2. **External fault-detection / correlation models** — feed sim trajectories into ML / statistical models. Need batch runs with reproducible seeds and clean fingerprint pins.
 
 Both callers depend on the **byte-identical trajectory contract**: given the same seed and the same `ProcessFaults`, the trajectory is reproducible. Fingerprints are pinned in `tests/` — drift fails loud. Don't reorder statements in the Numba kernels without updating the pinned hashes and explaining why.
 
@@ -68,15 +68,15 @@ NOTES.md                # historical: upstream-faithful bugs we found and fixed
 
 ## Git workflow
 
-- Feature branches, PRs to `main`. No remote yet.
+- Feature branches, PRs to `main`. Remote: `git@github.com:joelsansana/bdsim-python.git`.
 - Branch naming: `feature/<name>`, `fix/<name>`, `layerN/<name>` for roadmap steps.
 - Commit messages: `feat(<scope>)`, `fix(<scope>)`, `chore(<scope>)` prefix; body explains *why* the change is needed and *what fingerprint update* it caused, if any.
 - Tests + ruff clean required before merge.
 - **Fingerprint update = a "this is intentional" line in the commit body** with the old pin and the new pin, side by side.
 
-## Layer / roadmap status (mirror of dashboard + Lepanto vault)
+## Layer / roadmap status
 
-See `~/Documents/Notas/Lepanto/BDSIM_Roadmap.md` for the authoritative roadmap. This repo's coverage:
+This repo's coverage:
 
 - ✅ Step 1 (live sim driver), Step 2 (MQTT publish is on the dashboard side), Step 4 (live fault injection), Step 5 (sensor failure modes), Step 8 (scenario runner is on the dashboard side)
 - ✅ Layer 2.1 (quality latching — `quality_state=True` mode), Layer 2.5 (HEX fouling as continuous state, `fouling_dynamic=True` mode), Layer 2.6 (external disturbances), Layer 2.6b (cw_pump_trip mid-run override), Layer 2.7 (operator-driven disturbance schedule), Layer 2.4 (pump_health + valve_stiction_pct as continuous state — `pump_wear=True` / `valve_wear=True`), Layer 2.8a (NIR/IR virtual spectrum sensor — `spectrum_enabled=True`), **Layer 2.8b** (five-mode fouling stepper — modes 4/5 stochastic ARMAX windowed injection, port of upstream `fouling.m`)
@@ -86,8 +86,8 @@ See `~/Documents/Notas/Lepanto/BDSIM_Roadmap.md` for the authoritative roadmap. 
 
 The dashboard calls into bdsim via `from bdsim import LiveSimulator` (live path) or `from bdsim.simulation import run_with` (batch path). When you change a `ProcessFaults` knob, the dashboard's `SimRunner._build_pfaults()` may need a corresponding update to surface it. When you change a `Settings` field, check the dashboard's `RunnerConfig` for a parallel knob.
 
-When you change the bdsim install, re-run:
+When you change the bdsim install, re-run from this repo's root:
 ```bash
-pip install --user --break-system-packages -e ~/Documents/projects/bdsim
+pip install --user --break-system-packages -e .
 ```
 The dashboard depends on the editable install, not on `sys.path` hacks.

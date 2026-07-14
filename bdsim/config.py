@@ -194,7 +194,8 @@ class ProcessFaults:
     #   sv[27] = IV_feed    (g I2/100g, typical 50..80)
     # Published channels QA-101/102/103 carry the *latched* lab samples
     # (sampled once per lab_cycle_s), not the instantaneous truth — this
-    # is the time-lag structure that Lepanto exploits.
+    # is the time-lag structure between OT (instantaneous) and lab
+    # (sampled) measurements that downstream fault-detection models can use.
     # quality_lag_mode = "lab" → 15-min default lab cycle.
     # quality_lag_mode = "online" → 60-s NIR cycle (online analyser).
     # quality_state=False preserves the upstream 21-component state.
@@ -403,7 +404,7 @@ class SensorFaults:
     bias_b: dict[int, float] = field(default_factory=dict)
 
     # ------------------------------------------------------------------ #
-    # Live fault knobs (mid-run mutable for the Lepanto FDE integration).
+    # Live fault knobs (mid-run mutable for fault-injection scenarios).
     # These fields let external code inject faults between ODE steps
     # without rebuilding the simulator. The dashboard's fault handler
     # registry writes into these; ``LiveSimulator.step()`` reads them.
@@ -721,8 +722,8 @@ class Results:
                                                               # step (length lt-1). Populated by both the
                                                               # batch ``run_with`` path and the
                                                               # ``LiveSimulator`` path so downstream
-                                                              # consumers (tests, dashboard, Lepanto
-                                                              # correlation) can inspect which path
+                                                              # consumers (tests, dashboard, external
+                                                              # fault-detection) can inspect which path
                                                               # (continuous α / windowed mode 4-5 /
                                                               # static legacy) the kernel used.
 

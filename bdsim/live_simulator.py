@@ -12,7 +12,7 @@ interval at a time. It exists for two reasons:
    next iteration. The batch :func:`bdsim.simulation.run_with` cannot
    expose these knobs mid-run; the live driver can.
 
-2. **Lepanto FDE integration.** The bdsim-dashboard wants to drive a
+2. **Dashboard / live-consumer integration.** The bdsim-dashboard wants to drive a
    process simulator from an async event loop in the same style as a
    real plant DCS - request the next sample, publish it, service fault
    injections in between. Generators (``yield``) are awkward to drive
@@ -1211,7 +1211,7 @@ class LiveSimulator:
             # the published disturbance column. The kernel above
             # already applied the override to ``self._u[4]`` for the
             # ODE step; here we update the published snapshot so the
-            # dashboard / Lepanto consumer sees the actual CW pressure
+            # dashboard / live consumer sees the actual CW pressure
             # rather than the unperturbed baseline track. The
             # ``self._disturbance_track`` is left untouched so a
             # future run (or a reset) starts from a clean baseline.
@@ -1230,7 +1230,7 @@ class LiveSimulator:
 
         Baseline channels (Tamb, Tcw, PCW) come straight from
         ``self._disturbance_track[i]``. The PCW channel is overridden
-        when the trip is active so the dashboard / Lepanto consumer
+        when the trip is active so the dashboard / live consumer
         sees the actual pressure the kernel used, not the unperturbed
         baseline.
 

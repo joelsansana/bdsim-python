@@ -18,10 +18,13 @@ The port is faithful to the MATLAB semantics and uses modern Python idioms:
 
 ## Install
 
+From this repo's root:
+
 ```bash
-cd ~/Documents/projects/bdsim
 pip install --break-system-packages -e .   # numpy, scipy, plotly, numba, torch
 ```
+
+See [`ADMIN.md`](ADMIN.md) for the full install guide (PEP 668 flags, venv workflow, Numba cache management, fingerprint regression checks).
 
 ## Run
 
@@ -112,13 +115,44 @@ The Numba win is in the per-step RHS evaluation. A 5× speedup would
 require a custom integrator with Numba-compiled step-size control
 (currently `solve_ivp` is Python-bound for adaptive stepping).
 
-## Licence
+## License
 
 GPLv3+, matching upstream BDSIM. Original copyright 2019 Natércia C. P. Fernandes,
 natercia@eq.uc.pt.
 
-## Use case in Lepanto
+## Applications
 
-This port is intended as a **TRL 5/6 simulation environment** for testing
-fault-detection algorithms before deploying to the Bioadvance biodiesel
-plant. See `~/Documents/Notas/Lepanto/Lepanto_Road_Map.md` for context.
+The package was developed to provide a reproducible biodiesel-plant simulation
+for:
+
+- **Control-loop tuning and PID studies.** Sweep `Settings.live_sp1..4`, watch
+  the controller chase them, and inspect the 9 standard figures.
+- **Fault-detection / anomaly-detection R&D.** Inject sensor bias, dropout,
+  or stuck-at faults via `SensorFaults`, or run the Layer 2.4 pump/valve
+  degradation paths, then train statistical or ML models on the trajectories.
+- **Operator training and scenario rehearsal.** Drive the sim live via
+  `LiveSimulator` or the companion [`bdsim-dashboard`](https://github.com/joelsansana/bdsim-dashboard)
+  operator console to rehearse a fault response before going near a real plant.
+- **Process-control coursework.** A faithful reimplementation of upstream
+  Fernandes (2019) with the same inputs/outputs, suitable as a teaching
+  reference for a unit on transesterification kinetics and PID loops.
+
+## Contributing
+
+Issues and pull requests are welcome. Before opening a PR, please:
+
+1. **Read [`AGENTS.md`](AGENTS.md)** for build conventions and the
+   fingerprint-regression contract.
+2. **Don't change the ODE math without a failing test first.** The Numba-JIT
+   kernels pin a SHA-256 fingerprint per profile (`tests/test_smoke.py`,
+   `tests/test_live_simulator.py`). Any numerical change updates the pin and
+   must be called out in the PR description.
+3. **Don't add a new top-level dependency without asking.** The current stack
+   (numpy/scipy/numba/torch) is intentional.
+4. **Tests + `ruff check bdsim/ tests/` must be clean** before requesting
+   review.
+
+The companion [`bdsim-dashboard`](https://github.com/joelsansana/bdsim-dashboard)
+repo wraps this package as a live operator console (HTTP + MQTT +
+Streamlit). When you change a `ProcessFaults` knob here, check the
+dashboard's `SimRunner._build_pfaults()` for a corresponding update.
