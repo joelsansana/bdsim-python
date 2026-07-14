@@ -47,3 +47,6 @@ results/*.png
 
 Fernandes2019_BDSIM.pdf
 manual.pdf
+
+# Cursor
+/.cursor/
