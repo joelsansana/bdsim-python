@@ -473,7 +473,8 @@ def run_with(
     # quality_latched[i, :] holds the most-recent lab sample for
     # (FAME, water, IV) at sim step i. The latched value stays
     # constant between lab cycles — this is the time-lag structure
-    # Lepanto exploits. Initial sample at t=0 so the dashboard
+    # between OT (instantaneous) and lab (sampled) measurements.
+    # Initial sample at t=0 so the dashboard
     # has something to show on startup.
     quality_latched = np.zeros((lt, 3))
     last_lab_sample_t: float = -np.inf                       # force a sample at t=0
@@ -740,7 +741,7 @@ def run_with(
     # Layer 2.4: apply pump_health multiplier to the published PCW
     # channel (index 2) when pump_wear is on. The kernel applies the
     # same factor on u[4] in the perturbation block; we mirror it on
-    # the published snapshot here so dashboards / Lepanto consumers
+    # the published snapshot here so dashboards / live consumers
     # see what the kernel actually used. We mutate a copy because the
     # caller may want to inspect the unperturbed baseline elsewhere.
     # The pump_health slot index depends on which other layers are

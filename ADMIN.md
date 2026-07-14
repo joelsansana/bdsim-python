@@ -8,12 +8,13 @@ The person who keeps bdsim installable, runnable, and reproducible on this box (
 
 ## Standard install
 
+From this repo's root:
+
 ```bash
-cd ~/Documents/projects/bdsim
 pip install --user --break-system-packages -e .
 ```
 
-The `--user --break-system-packages` is required because Debian/Ubuntu's PEP 668 protection blocks system-wide pip installs. The editable install (`-e`) means changes to source are picked up on the next Python invocation without re-installing.
+The `--user --break-system-packages` is required on Debian/Ubuntu systems where PEP 668 protection blocks system-wide pip installs. The editable install (`-e`) means changes to source are picked up on the next Python invocation without re-installing.
 
 If you don't have the bdsim package in a system Python's path, the bdsim-dashboard cannot import it from a fresh shell. Verify after install:
 
@@ -21,14 +22,13 @@ If you don't have the bdsim package in a system Python's path, the bdsim-dashboa
 python3 -c "import bdsim, bdsim.live_simulator, bdsim.simulation, bdsim.config; print(bdsim.__file__)"
 ```
 
-Should print `~/Documents/projects/bdsim/bdsim/__init__.py`. If it prints `ModuleNotFoundError`, the editable install didn't land in this Python's site-packages — run the install command from a shell where this is the default `python3`.
+Should print a path ending in `bdsim/__init__.py` inside this repo. If it prints `ModuleNotFoundError`, the editable install didn't land in this Python's site-packages — run the install command from a shell where this is the default `python3`.
 
 ## Alternative: venv
 
 If the system install conflicts with something:
 
 ```bash
-cd ~/Documents/projects/bdsim
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
@@ -59,7 +59,6 @@ Numba JIT compiles each `@njit` function on first call and caches the compiled o
 Force a clean rebuild:
 
 ```bash
-cd ~/Documents/projects/bdsim
 find . -name "*.nbi" -delete
 find . -name "__pycache__" -exec rm -rf {} +
 ```

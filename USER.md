@@ -264,4 +264,5 @@ class ProcessFaults:
 - `bdsim/live_simulator.py` — the live driver with extensive docstrings
 - `bdsim/config.py` — every config dataclass, heavily commented
 - `NOTES.md` — historical: upstream-faithful bugs we found and fixed
-- `~/Documents/Notas/Lepanto/BDSIM_Roadmap.md` — strategic roadmap
+- `AGENTS.md` — build conventions and roadmap status
+- Companion repo [`bdsim-dashboard`](https://github.com/joelsansana/bdsim-dashboard) for the live operator console
