@@ -6,35 +6,52 @@ System administration guide. Covers install, packaging, environment setup, depen
 
 The person who keeps bdsim installable, runnable, and reproducible on this box (or any box). You care about: Python version, Numba cache, editable install, system vs. user site-packages, fingerprint regression, and runtime dependencies.
 
-## Standard install
+## Fingerprint-aligned install (required for pin tests)
+
+Use this path whenever you run the fingerprint suite or need trajectories that match the pinned hashes in `tests/`.
+
+**Reference stack for bdsim 1.1.1 pins:** Python **3.10** + committed [`uv.lock`](uv.lock) → `numpy==2.2.6`, `scipy==1.15.3`, `numba==0.66.0` (macOS arm64 reference host). Source of truth is the lockfile, not loose `pyproject.toml` ranges.
 
 From this repo's root:
+
+```bash
+# 1. Python 3.10 (install if needed)
+uv python install 3.10
+
+# 2. Sync editable package + test extras FROM the committed lockfile
+#    Do not delete or casually regenerate uv.lock — that can retarget pins.
+uv sync --extra test
+
+# 3. Verify stack + editable install path
+uv run python -c "import sys,numpy,scipy,numba,bdsim; print(sys.version); print(numpy.__version__, scipy.__version__, numba.__version__); print(bdsim.__file__)"
+```
+
+Expect versions `2.2.6 1.15.3 0.66.0` on Python 3.10, and a path ending in this repo’s `bdsim/__init__.py`. Start bdsim-dashboard from the **same** `uv` environment.
+
+Then run health checks with `uv run …` only (see below). First Numba compile of hot kernels can take ~30–60s; later runs use the `.nbi` cache.
+
+> **Caveat:** Other OS/CPU/BLAS builds, or Python ≥3.11 (the lockfile selects different numpy/scipy wheels via markers), **may** still diverge from pins even after a correct `uv sync`. If fingerprint tests fail, paste the verify-stack output above before changing pins.
+
+## Run-only install (fingerprints not guaranteed)
+
+OK to **run** `python -m bdsim` or import the library. Bare `pip install` **ignores** `uv.lock` and resolves within `numpy>=1.24` / `scipy>=1.11` / … — fingerprint tests often fail.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -e ".[test]"
+python -c "import bdsim; print(bdsim.__file__)"
+```
+
+### Fallback: system / user site (PEP 668)
+
+Only if you cannot use `uv`/venv. On Debian/Ubuntu:
 
 ```bash
 pip install --user --break-system-packages -e .
 ```
 
-The `--user --break-system-packages` is required on Debian/Ubuntu systems where PEP 668 protection blocks system-wide pip installs. The editable install (`-e`) means changes to source are picked up on the next Python invocation without re-installing.
-
-If you don't have the bdsim package in a system Python's path, the bdsim-dashboard cannot import it from a fresh shell. Verify after install:
-
-```bash
-python3 -c "import bdsim, bdsim.live_simulator, bdsim.simulation, bdsim.config; print(bdsim.__file__)"
-```
-
-Should print a path ending in `bdsim/__init__.py` inside this repo. If it prints `ModuleNotFoundError`, the editable install didn't land in this Python's site-packages — run the install command from a shell where this is the default `python3`.
-
-## Alternative: venv
-
-If the system install conflicts with something:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-```
-
-The dashboard is then started from the same venv.
+Same caveat: run-only; not for fingerprint parity.
 
 ## Dependencies
 
@@ -44,13 +61,14 @@ The dashboard is then started from the same venv.
 - `numba>=0.58` — the JIT compiler. **First-run of a Numba kernel takes ~30-60s while it compiles; subsequent runs use the `.nbi` cache.**
 - `scipy>=1.11` — `solve_ivp` (RK45) is the ODE integrator
 - `torch>=2.0` — the decanter split MLP
+- `plotly>=6.9.0` — figure HTML output
 
 Optional (test extras):
 
 - `pytest>=8.0`
 - `pytest-asyncio>=0.23`
 
-The decanter split neural net in `bdsim/split_nn.py` was trained by upstream on a 3-layer MLP. The trained weights are in `bdsim/split_nn_weights.pt` (or generated on first run via `_ensure_weights()`).
+The decanter split neural net in `bdsim/split_nn.py` is a faithful port of the upstream 3-layer MLP. Weights and biases are **hardcoded** as NumPy constants in that module (and loaded into `DecanterSplitNet`); there is no `split_nn_weights.pt` file and no runtime weight download.
 
 ## Numba cache management
 
@@ -66,44 +84,46 @@ find . -name "__pycache__" -exec rm -rf {} +
 Then re-run the smoke test to warm the cache:
 
 ```bash
-python3 -m pytest tests/test_smoke.py -q
+uv run python -m pytest tests/test_smoke.py -q
 ```
 
 ## Fingerprint regression
 
 `tests/test_smoke.py` and `tests/test_live_simulator.py` pin SHA-256 fingerprints over the full trajectory. A silent numerical drift in a kernel will fail loud.
 
-The pinned hashes (current):
+Named profiles (see `docs/00-orientation/Byte-identical-contract.md` and `AGENTS.md`):
 
-| Path | Profile | Hash |
-|---|---|---|
-| batch | legacy default | `sv=6f61eb532b3284ee` |
-| batch | legacy default | `pv=72a3d070452c8fb8` |
-| batch | legacy default | `uv=53a404a4b3d7a63c` |
-| batch | Layer 2.5 (HEX fouling dynamic) | `sv=1938fec8...` |
-| batch | Layer 2.6 (active disturbance) | `sv=e2a29849...` |
-| live | legacy default | `sv=f37fb5e0f70f5516` |
-| live | Layer 2.6 (active disturbance) | `sv=13ea81f3af76ec5a` |
+| Path | Profile | Meaning | Hash |
+|---|---|---|---|
+| batch | legacy fingerprint | Tests pass `fouling_dynamic=False` — **not** bare `ProcessFaults()` | `sv=c8807b23b14a9ad1` |
+| batch | legacy fingerprint | | `pv=77def506dbfe25c9` |
+| batch | legacy fingerprint | | `uv=17e620519474074a` |
+| batch | Layer 2.5 fingerprint | Dynamic HEX fouling (`fouling_dynamic=True`) | `sv=696531c4...` |
+| batch | Layer 2.6 (active disturbance) | Nonzero disturbance amplitudes | `sv=8865a8c3...` |
+| live | legacy fingerprint | Matching legacy knobs | `sv=23c3c885694c3d24` |
+| live | Layer 2.6 (active disturbance) | | `sv=bb763a9bde1d3fc9` |
 
-When a fingerprint updates, that's a "we changed the math" signal. Document the why in the commit body and update the pin in the test file. Don't suppress the test.
+Runtime default is bare `ProcessFaults()` (`fouling_dynamic=True`, `sv` width 22). When a fingerprint updates, that's a "we changed the math **or the numerical stack**" signal. Pins as of **1.1.1** match `uv.lock` (`numpy==2.2.6`, `scipy==1.15.3`, `numba==0.66.0`). Document the why in the commit body and update the pin in the test file. Don't suppress the test.
 
 ## Health checks
 
+Use after a **fingerprint-aligned** install (`uv sync --extra test`):
+
 ```bash
-# 1. Install works
-python3 -c "import bdsim; print('OK:', bdsim.__file__)"
+# 1. Stack + install path (expect 2.2.6 1.15.3 0.66.0 on Python 3.10)
+uv run python -c "import sys,numpy,scipy,numba,bdsim; print(sys.version); print(numpy.__version__, scipy.__version__, numba.__version__); print('OK:', bdsim.__file__)"
 
-# 2. Smoke test (12 tests, ~3-4 min on first run with Numba compile)
-python3 -m pytest tests/test_smoke.py -q
+# 2. Smoke test (~3-4 min on first run with Numba compile)
+uv run python -m pytest tests/test_smoke.py -q
 
-# 3. Full test suite (~6:40 once Numba is warm)
-python3 -m pytest tests/ -q
+# 3. Full test suite (~6:40 once Numba is warm) — includes fingerprint pins
+uv run python -m pytest tests/ -q
 
 # 4. Lint (E702/E401 in ode.py are expected — Numba multi-statement)
-ruff check bdsim/ tests/
+uv run ruff check bdsim/ tests/
 
 # 5. CLI works
-python3 -m bdsim 42 --outdir /tmp/bdsim-check --no-plots
+uv run python -m bdsim 42 --outdir /tmp/bdsim-check --no-plots
 ls /tmp/bdsim-check/                     # expect 4 CSVs
 ```
 
@@ -123,9 +143,12 @@ If you ever need bdsim to run as a long-lived process for some other consumer, t
 
 ## Upstream reference
 
-- **Original MATLAB:** Natércia C. P. Fernandes, 2019, University of Coimbra (`natercia@eq.uc.pt`).
-- **Reference PDFs in `docs/`:** `Fernandes2019_BDSIM.pdf`, `manual.pdf`.
-- **License:** GPLv3+ (matches upstream).
+- **Original MATLAB:** Natércia C. P. Fernandes, 2019, University of Coimbra (`natercia@eq.uc.pt`). Upstream: `https://github.com/naterciafernandes/BDSIM`.
+- **Docs vault:** [`docs/Home.md`](docs/Home.md) (see [`docs/README.md`](docs/README.md)).
+- **Optional PDFs:** `Fernandes2019_BDSIM.pdf` and `manual.pdf` are gitignored at the repo root — drop local copies if you have them; not required to run.
+- **Citation:** [`CITATION.cff`](CITATION.cff).
+- **License:** GPLv3+ (matches upstream); see [`LICENSE`](LICENSE).
+- **Maintainer scripts:** [`scripts/`](scripts/) — optional utilities only (see `scripts/README.md`).
 
 ## When to escalate to Joel
 

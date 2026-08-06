@@ -181,11 +181,11 @@ def test_default_fingerprint_unchanged_from_layer25_baseline() -> None:
     pfaults = ProcessFaults(fouling_dynamic=False, quality_state=False)
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
     # Pinned by Layer 2.5 / Step 4 regression tests.
-    assert _fingerprint(res.sv) == "6f61eb532b3284ee", (
-        f"Default sv fingerprint drifted: {_fingerprint(res.sv)} != 6f61eb532b3284ee"
+    assert _fingerprint(res.sv) == "c8807b23b14a9ad1", (
+        f"Default sv fingerprint drifted: {_fingerprint(res.sv)} != c8807b23b14a9ad1"
     )
-    assert _fingerprint(res.pv) == "72a3d070452c8fb8"
-    assert _fingerprint(res.uv) == "53a404a4b3d7a63c"
+    assert _fingerprint(res.pv) == "77def506dbfe25c9"
+    assert _fingerprint(res.uv) == "17e620519474074a"
 
 
 def test_active_disturbance_produces_new_pinned_fingerprint() -> None:
@@ -201,8 +201,8 @@ def test_active_disturbance_produces_new_pinned_fingerprint() -> None:
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
     # This is a stable pin. Any change to the disturbance kernel
     # bumps these hashes; tests will catch silent regressions.
-    assert _fingerprint(res.sv) == "e2a29849064d915e", (
-        f"Active-disturbance sv fingerprint drifted: {_fingerprint(res.sv)} != e2a29849064d915e"
+    assert _fingerprint(res.sv) == "8865a8c352cb6b55", (
+        f"Active-disturbance sv fingerprint drifted: {_fingerprint(res.sv)} != 8865a8c352cb6b55"
     )
-    assert _fingerprint(res.pv) == "f33797fd634514df"
-    assert _fingerprint(res.uv) == "f0187880968c4735"
+    assert _fingerprint(res.pv) == "98a6fb024c62a056"
+    assert _fingerprint(res.uv) == "401adfcb74484141"

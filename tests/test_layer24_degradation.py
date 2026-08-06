@@ -55,7 +55,7 @@ def test_legacy_72h_fingerprint_preserved_with_no_wear() -> None:
     """No Layer 2.4 switches on + no Layer 2.5 / Layer 2.1 → canonical 72 h hash.
 
     This is the regression test that catches silent kernel changes.
-    The pin ``sv=6f61eb53`` is the upstream Layer 2.5/2.6 contract;
+    The pin ``sv=c8807b23`` is the upstream Layer 2.5/2.6 contract;
     Layer 2.4 must not perturb it when both new switches are off.
     """
     settings = Settings()
@@ -65,9 +65,9 @@ def test_legacy_72h_fingerprint_preserved_with_no_wear() -> None:
         pump_wear=False, valve_wear=False,                  # Layer 2.4 off
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    assert _fingerprint(res.sv) == "6f61eb532b3284ee"
-    assert _fingerprint(res.pv) == "72a3d070452c8fb8"
-    assert _fingerprint(res.uv) == "53a404a4b3d7a63c"
+    assert _fingerprint(res.sv) == "c8807b23b14a9ad1"
+    assert _fingerprint(res.pv) == "77def506dbfe25c9"
+    assert _fingerprint(res.uv) == "17e620519474074a"
 
 
 # --------------------------------------------------------------------------- #
@@ -299,9 +299,9 @@ def test_pump_only_72h_fingerprint_pinned() -> None:
         pump_wear_rate_per_h=0.01,
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    assert _fingerprint(res.sv) == "ec13ae081b492068"
-    assert _fingerprint(res.pv) == "91adce03cd80c8c7"
-    assert _fingerprint(res.uv) == "098cd433f67f4e59"
+    assert _fingerprint(res.sv) == "7ddd7aaa7da4b679"
+    assert _fingerprint(res.pv) == "e0dba881fb9b62f3"
+    assert _fingerprint(res.uv) == "86c2704f776aefda"
 
 
 def test_valve_only_72h_fingerprint_pinned() -> None:
@@ -314,9 +314,9 @@ def test_valve_only_72h_fingerprint_pinned() -> None:
         valve_stiction_rate_pct_per_h=0.05,
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    assert _fingerprint(res.sv) == "d2dcef58708fa86a"
-    assert _fingerprint(res.pv) == "4c3c2a434c26290b"
-    assert _fingerprint(res.uv) == "9badec1ffb4045cb"
+    assert _fingerprint(res.sv) == "9425d007ae968ee7"
+    assert _fingerprint(res.pv) == "02296ffa9212c1b6"
+    assert _fingerprint(res.uv) == "aa146ea351b98d91"
 
 
 def test_both_wear_72h_fingerprint_pinned() -> None:
@@ -329,9 +329,9 @@ def test_both_wear_72h_fingerprint_pinned() -> None:
         valve_stiction_initial_pct=0.0,
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    assert _fingerprint(res.sv) == "d9b8de93fd21725d"
-    assert _fingerprint(res.pv) == "2b9b3518d0dafd94"
-    assert _fingerprint(res.uv) == "0c38a9f26efd832e"
+    assert _fingerprint(res.sv) == "c092fe082f4ba6f4"
+    assert _fingerprint(res.pv) == "2d26f03fec71c91a"
+    assert _fingerprint(res.uv) == "4ef50b9fd34da1d4"
 
 
 # --------------------------------------------------------------------------- #
