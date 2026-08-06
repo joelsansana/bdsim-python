@@ -5,7 +5,7 @@ A Python port of the BDSIM MATLAB/Octave simulator by Natércia C. P. Fernandes
 (filter → reactor → heat exchanger → decanter → washer → dryer) with sensors,
 PID controllers, valve stiction, and a decanter split neural network.
 
-**Current version: 1.1.0** (`bdsim/__init__.py:__version__`, mirrored in `pyproject.toml`). A fingerprint bump always requires a version bump — see `AGENTS.md` for the rule.
+**Current version: 1.1.0** (`bdsim/__init__.py:__version__`, mirrored in `pyproject.toml`). See [`CHANGELOG.md`](CHANGELOG.md). A fingerprint bump always requires a version bump — see `AGENTS.md` for the rule.
 
 The port is faithful to the MATLAB semantics and uses modern Python idioms:
 
@@ -18,13 +18,17 @@ The port is faithful to the MATLAB semantics and uses modern Python idioms:
 
 ## Install
 
-From this repo's root:
+From this repo's root (**preferred**):
 
 ```bash
-pip install --break-system-packages -e .   # numpy, scipy, plotly, numba, torch
+uv sync --extra test          # uses uv.lock + editable package
+# or
+python3 -m venv .venv && source .venv/bin/activate && pip install -e ".[test]"
 ```
 
-See [`ADMIN.md`](ADMIN.md) for the full install guide (PEP 668 flags, venv workflow, Numba cache management, fingerprint regression checks).
+Fallback on PEP 668 hosts only: `pip install --user --break-system-packages -e .`
+
+See [`ADMIN.md`](ADMIN.md) for the full install guide (Numba cache, fingerprints, health checks).
 
 ## Run
 
@@ -127,6 +131,8 @@ require a custom integrator with Numba-compiled step-size control
 
 GPLv3+, matching upstream BDSIM. Original copyright 2019 Natércia C. P. Fernandes,
 natercia@eq.uc.pt.
+
+Cite this software (and upstream BDSIM / split-NN references) via [`CITATION.cff`](CITATION.cff).
 
 ## Applications
 

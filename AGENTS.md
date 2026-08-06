@@ -55,7 +55,8 @@ tests/
 └── test_layer28b_live_fouling.py # Layer 2.8b: LiveSimulator wiring + priority
 
 results/                # default output dir (created on first run)
-docs/                   # Obsidian knowledge base (Home.md) + optional upstream PDFs
+docs/                   # Obsidian knowledge base (docs/Home.md); see docs/README.md
+scripts/                # optional maintainer utilities (not part of the package)
 NOTES.md                # historical: upstream-faithful bugs we found and fixed
 ```
 
@@ -97,6 +98,7 @@ The dashboard calls into bdsim via `from bdsim import LiveSimulator` (live path)
 
 When you change the bdsim install, re-run from this repo's root:
 ```bash
-pip install --user --break-system-packages -e .
+uv sync --extra test
+# or: python3 -m venv .venv && source .venv/bin/activate && pip install -e ".[test]"
 ```
-The dashboard depends on the editable install, not on `sys.path` hacks.
+The dashboard depends on the editable install, not on `sys.path` hacks. (PEP 668 fallback: `pip install --user --break-system-packages -e .` — see `ADMIN.md`.)

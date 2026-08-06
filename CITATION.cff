@@ -1,0 +1,63 @@
+# This CITATION.cff file describes how to cite bdsim (this repository).
+# For machine-readable citation metadata see https://citation-file-format.github.io/
+
+cff-version: 1.2.0
+message: >-
+  If you use this software, please cite it using the metadata below.
+  Prefer citing the upstream BDSIM work (preferred-citation) when your
+  contribution is about the plant model itself.
+type: software
+title: "bdsim — Biodiesel Process Simulator (Python)"
+version: "1.1.0"
+license: GPL-3.0-or-later
+abstract: >-
+  Faithful Python port of Natércia Fernandes' BDSIM (Coimbra, 2019): a
+  batch biodiesel plant model with sensors, PID loops, valve stiction,
+  and a decanter split neural network. Deterministic batch and live
+  step-by-step APIs for operator dashboards and fault-detection research.
+authors:
+  - family-names: Sansana
+    given-names: Joel
+  - family-names: Strelet
+    given-names: Eugeniu
+repository-code: "https://github.com/joelsansana/bdsim-python"
+url: "https://github.com/joelsansana/bdsim-python"
+keywords:
+  - biodiesel
+  - process simulation
+  - fault detection
+  - PID control
+  - BDSIM
+
+preferred-citation:
+  type: software
+  title: "BDSIM — Biodiesel Dynamic SIMulator"
+  year: 2019
+  authors:
+    - family-names: Fernandes
+      given-names: "Natércia C. P."
+      email: natercia@eq.uc.pt
+  abstract: >-
+    MATLAB/Octave benchmark simulator for continuous biodiesel
+    production (transesterification), including process, sensor, and
+    actuator faults for data-driven algorithm testing.
+  url: "https://www.eq.uc.pt/~marco/research/pclab/downloads/index.html"
+  repository-code: "https://github.com/naterciafernandes/BDSIM"
+
+references:
+  - type: conference-paper
+    title: >-
+      Nonlinear Model Predictive Control of Biodiesel Production via
+      Transesterification of Vegetable Oils
+    year: 2014
+    authors:
+      - family-names: Brásio
+        given-names: A. S. R.
+      - family-names: Romanenko
+        given-names: A.
+      - family-names: Fernandes
+        given-names: "N. C. P."
+    doi: "10.1007/978-3-319-20328-7_6"
+    notes: >-
+      Decanter split-fraction neural network (MATLAB split.m); ported in
+      bdsim/split_nn.py.
