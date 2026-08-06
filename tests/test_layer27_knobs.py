@@ -56,9 +56,9 @@ def test_zero_amplitude_with_no_overlays_is_byte_identical_to_layer25() -> None:
     # the same fingerprint when amplitudes are zero). Layers 2.5
     # and 2.6 share this contract; Layer 2.7 must not break it
     # when all ``live_*`` fields are None.
-    assert _fingerprint(res.sv) == "6f61eb532b3284ee"
-    assert _fingerprint(res.pv) == "72a3d070452c8fb8"
-    assert _fingerprint(res.uv) == "53a404a4b3d7a63c"
+    assert _fingerprint(res.sv) == "c8807b23b14a9ad1"
+    assert _fingerprint(res.pv) == "77def506dbfe25c9"
+    assert _fingerprint(res.uv) == "17e620519474074a"
 
 
 # --------------------------------------------------------------------------- #
@@ -277,11 +277,11 @@ def test_active_ambient_overlay_pinned_fingerprint() -> None:
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
     # Stable pins (recompute by running the same fixture and
     # checking in the new hashes — these are the contract).
-    assert _fingerprint(res.sv) == "c27724c42077f1ed", (
+    assert _fingerprint(res.sv) == "677f6817f64172ab", (
         f"Layer 2.7 drift-overlay sv fingerprint drifted: {_fingerprint(res.sv)}"
     )
-    assert _fingerprint(res.pv) == "1183018643fd28a4"
-    assert _fingerprint(res.uv) == "d427cf8374f50760"
+    assert _fingerprint(res.pv) == "6a308554964e1051"
+    assert _fingerprint(res.uv) == "eb914f357f5d38c3"
 
 
 def test_clear_overlay_after_use_restores_cleared_state() -> None:
@@ -305,6 +305,6 @@ def test_clear_overlay_after_use_restores_cleared_state() -> None:
     # The cleared run with all profile knobs at zero must match the
     # no-overlay 24h fingerprint (different from the canonical 72h
     # Layer 2.5 / 2.6 hash because of horizon, not because of knobs).
-    assert _fingerprint(res_cleared.sv) == "4a36361ee56227e0"
-    assert _fingerprint(res_cleared.pv) == "bcae90e50da81d3d"
-    assert _fingerprint(res_cleared.uv) == "eea941a957ff250b"
+    assert _fingerprint(res_cleared.sv) == "7df580fdf1adead3"
+    assert _fingerprint(res_cleared.pv) == "02a434ac5ffca65a"
+    assert _fingerprint(res_cleared.uv) == "b0d476a82f2c5c19"

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bdsim"
-version = "1.1.0"
+version = "1.1.1"
 description = "Biodiesel Process Simulator — Python port of Natércia Fernandes' BDSIM (Coimbra, 2019). Faithful reimplementation of a batch biodiesel plant model with sensors, PID controllers, valve stiction, and a decanter split neural network."
 readme = "README.md"
 requires-python = ">=3.10"

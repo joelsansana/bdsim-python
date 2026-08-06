@@ -5,7 +5,7 @@ A Python port of the BDSIM MATLAB/Octave simulator by Natércia C. P. Fernandes
 (filter → reactor → heat exchanger → decanter → washer → dryer) with sensors,
 PID controllers, valve stiction, and a decanter split neural network.
 
-**Current version: 1.1.0** (`bdsim/__init__.py:__version__`, mirrored in `pyproject.toml`). See [`CHANGELOG.md`](CHANGELOG.md). A fingerprint bump always requires a version bump — see `AGENTS.md` for the rule.
+**Current version: 1.1.1** (`bdsim/__init__.py:__version__`, mirrored in `pyproject.toml`). See [`CHANGELOG.md`](CHANGELOG.md). A fingerprint bump always requires a version bump — see `AGENTS.md` for the rule.
 
 The port is faithful to the MATLAB semantics and uses modern Python idioms:
 
@@ -18,17 +18,24 @@ The port is faithful to the MATLAB semantics and uses modern Python idioms:
 
 ## Install
 
-From this repo's root (**preferred**):
+**Fingerprint-aligned (contributors / pin tests)** — uses committed `uv.lock`:
 
 ```bash
-uv sync --extra test          # uses uv.lock + editable package
-# or
+uv python install 3.10          # if needed; 3.10 is the 1.1.1 pin reference
+uv sync --extra test
+uv run python -c "import numpy,scipy,numba; print(numpy.__version__, scipy.__version__, numba.__version__)"
+# expect on 3.10: 2.2.6 1.15.3 0.66.0
+```
+
+Full procedure (verify path, caveats, health checks): [`ADMIN.md`](ADMIN.md) — section **Fingerprint-aligned install**.
+
+**Run-only** (sim works; fingerprint tests may fail — pip ignores `uv.lock`):
+
+```bash
 python3 -m venv .venv && source .venv/bin/activate && pip install -e ".[test]"
 ```
 
-Fallback on PEP 668 hosts only: `pip install --user --break-system-packages -e .`
-
-See [`ADMIN.md`](ADMIN.md) for the full install guide (Numba cache, fingerprints, health checks).
+PEP 668 fallback only: `pip install --user --break-system-packages -e .`
 
 ## Run
 

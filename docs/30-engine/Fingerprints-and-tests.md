@@ -15,20 +15,25 @@ Primarily `tests/test_smoke.py`, `tests/test_live_simulator.py`, and Layer-speci
 
 | Canonical profile | How tests build it | Example pin family |
 |-------------------|--------------------|--------------------|
-| Legacy fingerprint (batch) | `fouling_dynamic=False` etc. | `sv=6f61eb53…` |
-| Legacy fingerprint (live) | matching legacy knobs | `sv=f37fb5e0…` |
-| Layer 2.5 fingerprint (batch) | `fouling_dynamic=True`, extras off | `sv=1938fec8…` |
-| Layer 2.6 batch / live | disturbance amplitudes on | `e2a29849…` / `13ea81f3…` |
+| Legacy fingerprint (batch) | `fouling_dynamic=False` etc. | `sv=c8807b23…` |
+| Legacy fingerprint (live) | matching legacy knobs | `sv=23c3c885…` |
+| Layer 2.5 fingerprint (batch) | `fouling_dynamic=True`, extras off | `sv=696531c4…` |
+| Layer 2.6 batch / live | disturbance amplitudes on | `8865a8c3…` / `bb763a9b…` |
 
 (Exact strings are in the tests — always trust the test file over this note if they diverge.) Bare `ProcessFaults()` is the **runtime default**, not the legacy pin row.
 
 ## Running tests
 
+**Do not use bare `pip install` for fingerprint work** — it ignores `uv.lock`. Use a fingerprint-aligned install first ([`ADMIN.md`](../../ADMIN.md)):
+
 ```bash
-python3 -m pytest tests/ -q
+uv sync --extra test
+uv run python -c "import numpy,scipy,numba; print(numpy.__version__, scipy.__version__, numba.__version__)"
+# on Python 3.10 expect: 2.2.6 1.15.3 0.66.0
+uv run python -m pytest tests/ -q
 ```
 
-Smoke tests check shapes, physical ranges, and fingerprints. They do **not** currently compare to MATLAB golden CSVs (future work noted in repo review).
+Smoke tests check shapes, physical ranges, and fingerprints. They do **not** currently compare to MATLAB golden CSVs (future work noted in repo review). See [[Byte-identical-contract#How to reproduce pins]].
 
 ## When you change pins
 

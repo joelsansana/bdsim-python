@@ -23,11 +23,14 @@ Practical rules for juniors editing this repo. Hard constraints: [`AGENTS.md`](.
 
 ## Tests
 
+Fingerprint-aligned env first (see root [`ADMIN.md`](../../ADMIN.md) — **Fingerprint-aligned install**):
+
 ```bash
-python3 -m pytest tests/ -q
+uv sync --extra test
+uv run python -m pytest tests/ -q
 ```
 
-Full suite ~6:40. Smoke + fingerprint tests are the first safety net. See [[Fingerprints-and-tests]].
+Full suite ~6:40. Smoke + fingerprint tests are the first safety net. See [[Fingerprints-and-tests]]. Do **not** rely on bare `pip install` for pin parity — it ignores `uv.lock`.
 
 ## Sacred hot path
 
@@ -35,6 +38,6 @@ Anything `@njit(cache=True)` in `ode.py`, measurement/stiction/PID helpers, etc.
 
 ## Dashboard coordination
 
-Dashboard builds `ProcessFaults` via `SimRunner._build_pfaults()`. New knobs may need a dashboard PR too. Editable install from this repo root (see [`ADMIN.md`](../../ADMIN.md)).
+Dashboard builds `ProcessFaults` via `SimRunner._build_pfaults()`. New knobs may need a dashboard PR too. Editable install: `uv sync --extra test` from this repo root ([`ADMIN.md`](../../ADMIN.md)).
 
 Related: [[Home]], [[Repo-map]], [[Byte-identical-contract]], [[Pseudocode-conventions]]

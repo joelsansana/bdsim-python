@@ -31,13 +31,25 @@ Source of truth for defaults: `bdsim/config.py` (`ProcessFaults`). **Bare `Proce
 | Profile | How to get it | `sv` width | Role |
 |---------|---------------|------------|------|
 | **Runtime default** | `ProcessFaults()` | **22** | Layer 2.5 on (`fouling_dynamic=True`); other Layer masters off/zero. What `run()` / default live construction use. |
-| **Legacy fingerprint** | Explicit `fouling_dynamic=False` (+ other Layer masters off/zero) | **21** | Upstream-parity pins: batch `sv=6f61eb53…`, live `sv=f37fb5e0…`. Tests pass this override. |
-| **Layer 2.5 fingerprint** | `fouling_dynamic=True` with other extras off | **22** | Dynamic-α pin family: batch `sv=1938fec8…`. |
+| **Legacy fingerprint** | Explicit `fouling_dynamic=False` (+ other Layer masters off/zero) | **21** | Upstream-parity pins: batch `sv=c8807b23…`, live `sv=23c3c885…`. Tests pass this override. |
+| **Layer 2.5 fingerprint** | `fouling_dynamic=True` with other extras off | **22** | Dynamic-α pin family: batch `sv=696531c4…`. |
 
 Other Layer gates (`quality_state`, `pump_wear`, `valve_wear`, `spectrum_enabled`, disturbance amplitudes, `live_*`, fouling-mode windows) default **off / zero / `None`** and stay that way in the profiles above unless a test enables them.
 
 > [!note]
 > Changing `fouling_dynamic`’s code default requires Joel’s agreement plus coordinated pin/docs updates. Docs here describe **current** code behavior.
+
+## How to reproduce pins
+
+Pins match the committed [`uv.lock`](../../uv.lock) numerical stack (bdsim **1.1.1** reference: Python **3.10** → `numpy==2.2.6`, `scipy==1.15.3`, `numba==0.66.0`).
+
+```bash
+uv sync --extra test
+uv run python -c "import numpy,scipy,numba; print(numpy.__version__, scipy.__version__, numba.__version__)"
+uv run python -m pytest tests/ -q
+```
+
+Do not use bare `pip install -e .` for fingerprint work — it ignores the lockfile. Full procedure and caveats (other OS/BLAS/Python): root [`ADMIN.md`](../../ADMIN.md) — **Fingerprint-aligned install**. See also [[Fingerprints-and-tests]], [[How-to-work-here]].
 
 ## Pseudocode
 

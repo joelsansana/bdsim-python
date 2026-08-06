@@ -184,7 +184,7 @@ while not sim.done:
 
 The spectrum sensor is **post-process** — it reads the state vector
 after each ODE step but never writes back. The legacy fingerprint
-(`sv=6f61eb53...`) is preserved with `spectrum_enabled=True`.
+(`sv=c8807b23...`) is preserved with `spectrum_enabled=True`.
 
 ```
 
@@ -258,7 +258,7 @@ class ProcessFaults:
 - **Layer 2.4 `pump_health` multiplies the published PCW track.** When `pump_wear=True`, the `disturbances[i, 2]` channel reads 0.7× baseline when `pump_health=0.7`. The kernel applies the same factor on `u[4]` (Qheat) so the reactor temperature responds. Two independent multiplicative effects can stack: the Layer 2.6b `cw_pump_trip` override and the wear multiplier both act on the PCW channel.
 - **Layer 2.4 valve stiction only grows when valves move.** Idle valves (`dlift = 0`) accumulate zero stiction per second. To see stiction grow in a demo, drive the PID loop with a Qheat dip or feedstock change — the control valves chasing the new setpoint is what builds stiction.
 - **`res.disturbances` is `None` unless you set disturbance amplitudes.** The kernel skips the path entirely when all amplitudes are zero (legacy byte-identical contract). Set at least one to nonzero.
-- **Live path and batch path have different fingerprints** even at the same seed. The legacy batch pin `sv=6f61eb53...` requires `fouling_dynamic=False`. The live legacy baseline is `sv=f37fb5e0...`. Both are pinned.
+- **Live path and batch path have different fingerprints** even at the same seed. The legacy batch pin `sv=c8807b23...` requires `fouling_dynamic=False`. The live legacy baseline is `sv=23c3c885...`. Both are pinned.
 - **`LiveSimulator.t` raises IndexError after the run completes** if you haven't installed the post-run fix (`v0.4.1+`). It returns `settings.tf` instead. The dashboard depends on this — make sure your install is current.
 - **Numba caches are in `__pycache__/`** and `bdsim/*.nbi`. After major kernel changes, delete the cache: `find . -name "*.nbi" -delete && find . -name "__pycache__" -exec rm -rf {} +`.
 

@@ -225,8 +225,8 @@ def test_legacy_fingerprint_preserved_when_no_trip() -> None:
     Note: the live path (LiveSimulator) and the batch path (run_with)
     have different fingerprints because the live driver uses a
     different state initialisation order. The Layer 2.6 fingerprint
-    ``sv=6f61eb53`` is the batch baseline; the live baseline is
-    ``sv=f37fb5e0``. Both are pinned and must remain stable.
+    ``sv=c8807b23`` is the batch baseline; the live baseline is
+    ``sv=23c3c885``. Both are pinned and must remain stable.
     """
     settings = Settings(ti=0.0, tf=14400.0, dt=10.0)
     pf = ProcessFaults(fouling_dynamic=False, quality_state=False)
@@ -237,9 +237,9 @@ def test_legacy_fingerprint_preserved_when_no_trip() -> None:
     sv_hash = hashlib.sha256(sim._sv.tobytes()).hexdigest()[:16]
     pv_hash = hashlib.sha256(sim._pv.tobytes()).hexdigest()[:16]
     uv_hash = hashlib.sha256(sim._uv.tobytes()).hexdigest()[:16]
-    assert sv_hash == "f37fb5e0f70f5516", f"sv fingerprint drift: {sv_hash}"
-    assert pv_hash == "ee8040fce61b4d10", f"pv fingerprint drift: {pv_hash}"
-    assert uv_hash == "5b444a8250506bb0", f"uv fingerprint drift: {uv_hash}"
+    assert sv_hash == "23c3c885694c3d24", f"sv fingerprint drift: {sv_hash}"
+    assert pv_hash == "1100741e23724222", f"pv fingerprint drift: {pv_hash}"
+    assert uv_hash == "4d07a2b11af3b4e5", f"uv fingerprint drift: {uv_hash}"
 
 
 def test_legacy_fingerprint_preserved_with_amplitudes_but_no_trip() -> None:
@@ -247,7 +247,7 @@ def test_legacy_fingerprint_preserved_with_amplitudes_but_no_trip() -> None:
     disturbance sinusoids are active but no cw_pump_trip fires.
 
     The active profile pins a fresh live-path baseline
-    (``sv=13ea81f3``) so the override plumbing can be checked against
+    (``sv=bb763a9b``) so the override plumbing can be checked against
     a stable contract. Drift here means the override kernel touched
     the baseline path silently — a serious regression.
     """
@@ -265,9 +265,9 @@ def test_legacy_fingerprint_preserved_with_amplitudes_but_no_trip() -> None:
     sv_hash = hashlib.sha256(sim._sv.tobytes()).hexdigest()[:16]
     pv_hash = hashlib.sha256(sim._pv.tobytes()).hexdigest()[:16]
     uv_hash = hashlib.sha256(sim._uv.tobytes()).hexdigest()[:16]
-    assert sv_hash == "13ea81f3af76ec5a", f"sv fingerprint drift: {sv_hash}"
-    assert pv_hash == "04f19dd830b1c8c0", f"pv fingerprint drift: {pv_hash}"
-    assert uv_hash == "20e4814aa2ff62ad", f"uv fingerprint drift: {uv_hash}"
+    assert sv_hash == "bb763a9bde1d3fc9", f"sv fingerprint drift: {sv_hash}"
+    assert pv_hash == "70255ac8925208fa", f"pv fingerprint drift: {pv_hash}"
+    assert uv_hash == "79804cdbff7b12e9", f"uv fingerprint drift: {uv_hash}"
 
 
 # --------------------------------------------------------------------------- #
