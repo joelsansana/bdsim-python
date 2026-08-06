@@ -73,19 +73,19 @@ python3 -m pytest tests/test_smoke.py -q
 
 `tests/test_smoke.py` and `tests/test_live_simulator.py` pin SHA-256 fingerprints over the full trajectory. A silent numerical drift in a kernel will fail loud.
 
-The pinned hashes (current):
+Named profiles (see `docs/00-orientation/Byte-identical-contract.md` and `AGENTS.md`):
 
-| Path | Profile | Hash |
-|---|---|---|
-| batch | legacy default | `sv=6f61eb532b3284ee` |
-| batch | legacy default | `pv=72a3d070452c8fb8` |
-| batch | legacy default | `uv=53a404a4b3d7a63c` |
-| batch | Layer 2.5 (HEX fouling dynamic) | `sv=1938fec8...` |
-| batch | Layer 2.6 (active disturbance) | `sv=e2a29849...` |
-| live | legacy default | `sv=f37fb5e0f70f5516` |
-| live | Layer 2.6 (active disturbance) | `sv=13ea81f3af76ec5a` |
+| Path | Profile | Meaning | Hash |
+|---|---|---|---|
+| batch | legacy fingerprint | Tests pass `fouling_dynamic=False` — **not** bare `ProcessFaults()` | `sv=6f61eb532b3284ee` |
+| batch | legacy fingerprint | | `pv=72a3d070452c8fb8` |
+| batch | legacy fingerprint | | `uv=53a404a4b3d7a63c` |
+| batch | Layer 2.5 fingerprint | Dynamic HEX fouling (`fouling_dynamic=True`) | `sv=1938fec8...` |
+| batch | Layer 2.6 (active disturbance) | Nonzero disturbance amplitudes | `sv=e2a29849...` |
+| live | legacy fingerprint | Matching legacy knobs | `sv=f37fb5e0f70f5516` |
+| live | Layer 2.6 (active disturbance) | | `sv=13ea81f3af76ec5a` |
 
-When a fingerprint updates, that's a "we changed the math" signal. Document the why in the commit body and update the pin in the test file. Don't suppress the test.
+Runtime default is bare `ProcessFaults()` (`fouling_dynamic=True`, `sv` width 22). When a fingerprint updates, that's a "we changed the math" signal. Document the why in the commit body and update the pin in the test file. Don't suppress the test.
 
 ## Health checks
 

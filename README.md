@@ -47,16 +47,24 @@ from bdsim import run, run_with
 from bdsim.config import ProcessFaults
 import numpy as np
 
-# Default settings
+# Runtime default: fouling_dynamic=True → sv width 22 (Layer 2.5 α at sv[21])
 res = run(seed=42)
-print(res.t.shape, res.sv.shape)         # (51999,) (51999, 21)
+print(res.t.shape, res.sv.shape)         # (51999,) (51999, 22)
 
-# Custom faults: turn clogging off
+# Legacy fingerprint profile (upstream 21-wide state): pass fouling_dynamic=False
+res_legacy = run_with(
+    pfaults=ProcessFaults(fouling_dynamic=False),
+    seed=42,
+)
+
+# Custom faults: turn clogging off (still Layer 2.5 on unless you override)
 res = run_with(
     pfaults=ProcessFaults(clog_fraction=0.0, fouling=0),
     seed=42,
 )
 ```
+
+`ProcessFaults()` is the **runtime default** (Layer 2.5 on). The **legacy fingerprint** suite uses an explicit `fouling_dynamic=False` profile — see [`docs/00-orientation/Byte-identical-contract.md`](docs/00-orientation/Byte-identical-contract.md) and [`AGENTS.md`](AGENTS.md).
 
 ## Files
 

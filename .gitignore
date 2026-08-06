@@ -50,3 +50,6 @@ manual.pdf
 
 # Cursor
 .cursor/
+
+# Obsidian
+.obsidian/

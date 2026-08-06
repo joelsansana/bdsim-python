@@ -2,6 +2,8 @@
 
 You, the developer or researcher, want to use bdsim. This is the on-ramp.
 
+For a junior-oriented deep dive (plant flow, equations, channel maps, Obsidian wikilinks), start at [`docs/Home.md`](docs/Home.md).
+
 ## Who you probably are
 
 - A **data scientist** building fault-detection models on plant trajectories. You want clean, reproducible batch runs with `np.random.seed(seed)` and pinned fingerprints.
@@ -15,7 +17,7 @@ You, the developer or researcher, want to use bdsim. This is the on-ramp.
 # Batch run, default upstream settings, reproducible
 from bdsim import run_with
 res = run_with(seed=42)
-print(res.t.shape, res.sv.shape, res.pv.shape)   # (51999,) (51999, 21) (51999, 5)
+print(res.t.shape, res.sv.shape, res.pv.shape)   # (51999,) (51999, 22) (51999, 5) — runtime default includes Layer 2.5 α
 print(res.t[0], res.t[-1])                       # 0.0, 259980.0 (72h)
 ```
 
@@ -220,10 +222,10 @@ class StepResult:
 ```python
 @dataclass
 class ProcessFaults:
-    fouling: int = 1                  # 0/1 — pre-Layer 2.5 fouling (constant)
-    fouling_dynamic: bool = False     # Layer 2.5 — α evolves as an ODE state
+    fouling: int = 1                  # 0/1 — pre-Layer 2.5 fouling (constant series when dynamic off)
+    fouling_dynamic: bool = True      # Layer 2.5 — α evolves as an ODE state (default ON)
     quality_state: bool = False       # Layer 2.1 — latched QA measurements
-    quality_lag_mode: str = "fixed"   # "fixed" / "exponential" / "normal"
+    quality_lag_mode: str = "lab"     # "lab" / "online"
     ambient_t_amplitude_k: float = 0  # Layer 2.6 ambient sinusoid
     cw_t_amplitude_k: float = 0       # Layer 2.6 CW temperature sinusoid
     cw_p_drift_pa_per_h: float = 0    # Layer 2.6 CW pressure slow drift
@@ -248,13 +250,15 @@ class ProcessFaults:
     valve_stiction_ceiling_pct: float = 60.0
 ```
 
+> Tip: named profiles (runtime default vs legacy fingerprint) are in [`docs/00-orientation/Byte-identical-contract.md`](docs/00-orientation/Byte-identical-contract.md).
+
 ## Common gotchas
 
-- **The state vector widens when you turn on Layer 2.5 or 2.1.** `sv.shape` is 21 (default), 22 (Layer 2.5), 28 (Layer 2.5 + 2.1), plus 1 per Layer 2.4 switch (pump_wear, valve_wear). If you trained a model on the 21-wide vector, you have to re-train.
+- **Runtime default includes Layer 2.5.** `ProcessFaults()` has `fouling_dynamic=True` → `sv.shape[1] == 22` (`α` at `sv[21]`). The legacy 21-wide vector needs `fouling_dynamic=False`. Layer 2.1 quality mode and Layer 2.4 wear flags widen further. If you trained a model on a 21-wide vector, re-train or pin the legacy profile explicitly.
 - **Layer 2.4 `pump_health` multiplies the published PCW track.** When `pump_wear=True`, the `disturbances[i, 2]` channel reads 0.7× baseline when `pump_health=0.7`. The kernel applies the same factor on `u[4]` (Qheat) so the reactor temperature responds. Two independent multiplicative effects can stack: the Layer 2.6b `cw_pump_trip` override and the wear multiplier both act on the PCW channel.
 - **Layer 2.4 valve stiction only grows when valves move.** Idle valves (`dlift = 0`) accumulate zero stiction per second. To see stiction grow in a demo, drive the PID loop with a Qheat dip or feedstock change — the control valves chasing the new setpoint is what builds stiction.
 - **`res.disturbances` is `None` unless you set disturbance amplitudes.** The kernel skips the path entirely when all amplitudes are zero (legacy byte-identical contract). Set at least one to nonzero.
-- **Live path and batch path have different fingerprints** even at the same seed. The Layer 2.6 fingerprint `sv=6f61eb53...` is the **batch** baseline. The live baseline is `sv=f37fb5e0...`. Both are pinned.
+- **Live path and batch path have different fingerprints** even at the same seed. The legacy batch pin `sv=6f61eb53...` requires `fouling_dynamic=False`. The live legacy baseline is `sv=f37fb5e0...`. Both are pinned.
 - **`LiveSimulator.t` raises IndexError after the run completes** if you haven't installed the post-run fix (`v0.4.1+`). It returns `settings.tf` instead. The dashboard depends on this — make sure your install is current.
 - **Numba caches are in `__pycache__/`** and `bdsim/*.nbi`. After major kernel changes, delete the cache: `find . -name "*.nbi" -delete && find . -name "__pycache__" -exec rm -rf {} +`.
 
