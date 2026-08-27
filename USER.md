@@ -219,36 +219,72 @@ class StepResult:
 
 ### `ProcessFaults` (the main config block)
 
-```python
-@dataclass
-class ProcessFaults:
-    fouling: int = 1                  # 0/1 — pre-Layer 2.5 fouling (constant series when dynamic off)
-    fouling_dynamic: bool = True      # Layer 2.5 — α evolves as an ODE state (default ON)
-    quality_state: bool = False       # Layer 2.1 — latched QA measurements
-    quality_lag_mode: str = "lab"     # "lab" / "online"
-    ambient_t_amplitude_k: float = 0  # Layer 2.6 ambient sinusoid
-    cw_t_amplitude_k: float = 0       # Layer 2.6 CW temperature sinusoid
-    cw_p_drift_pa_per_h: float = 0    # Layer 2.6 CW pressure slow drift
-    cw_p_noise_pa: float = 0          # Layer 2.6 CW pressure noise (1σ)
-    met_cw_track: float = 0.3
-    oil_ambient_track: float = 0.7
-    qheat_cw_scaling: bool = True
-    cw_pump_low_factor: float = 0.3   # Layer 2.6b trip pressure floor
-    cw_pump_ramp_s: float = 30.0      # Layer 2.6b trip ramp duration
-    cw_pump_default_duration_s: float = 600.0
-    # ----- Layer 2.4: pump/valve degradation as continuous state -----
-    pump_wear: bool = False                       # Layer 2.4: pump_health sv slot
-    valve_wear: bool = False                      # Layer 2.4: valve_stiction_pct sv slot
-    pump_health_initial: float = 1.0              # 1.0 = brand-new, floor 0.05 = end-state
-    pump_wear_rate_per_h: float = 0.01            # dh/dt baseline
-    pump_wear_flow_exponent: float = 1.5          # dh/dt ∝ (Q/Qnom)^p
-    pump_wear_floor: float = 0.05                 # lower bound, post-integration clamp
-    pump_health_trip_threshold: float = 0.25      # scenario-side trip becomes likely below this
-    valve_stiction_initial_pct: float = 0.0
-    valve_stiction_rate_pct_per_h: float = 0.05    # grows proportional to |dlift/dt|
-    valve_stiction_floor_pct: float = 0.0
-    valve_stiction_ceiling_pct: float = 60.0
-```
+The full field list, organised by Layer. Defaults below are exactly
+what `ProcessFaults()` produces — keep them in mind when chasing
+unexpected trajectories.
+
+| Layer | Field | Type | Default | Purpose |
+|-------|-------|------|---------|---------|
+| (legacy) | `clog_fraction` | `float` | `5.95e-7` | filter clogging rate constant |
+| (legacy) | `DPclean` | `float` | `1e5` | clean-filter ΔP (Pa) |
+| (legacy) | `filter_std` | `float` | `5e-15` | filter pore-radius std |
+| (legacy) | `ratio_robs_r` | `float` | `0.9` | side-reaction deactivation factor |
+| (legacy) | `fouling` | `int` | `1` | 0 = off, 1 = on (pre-Layer 2.5 series) |
+| (legacy) | `foulingpar` | `np.ndarray` | `[3e-7]` | fouling rate parameter |
+| **2.5** | `fouling_dynamic` | `bool` | **`True`** | α evolves as an ODE state (default ON; turn off for legacy fingerprint) |
+| **2.1** | `quality_state` | `bool` | `False` | master switch — adds 6 sv slots, latched QA channels |
+| **2.1** | `quality_lag_mode` | `str` | `"lab"` | `"lab"` (15 min) or `"online"` (60 s) |
+| **2.1** | `lab_cycle_s` | `float` | `900.0` | lab sampling period |
+| **2.1** | `online_cycle_s` | `float` | `60.0` | NIR sampling period |
+| **2.1** | `lab_noise_fame` | `float` | `0.3` | FAME% noise (1σ, %) |
+| **2.1** | `lab_noise_water` | `float` | `20.0` | water-ppm noise (1σ) |
+| **2.1** | `lab_noise_iv` | `float` | `1.0` | IV noise (1σ, g I₂/100g) |
+| **2.6** | `ambient_t_mean_k` | `float` | `293.15` | ambient baseline (K) |
+| **2.6** | `ambient_t_amplitude_k` | `float` | `0.0` | daily sinusoid amplitude (K) |
+| **2.6** | `ambient_t_period_s` | `float` | `86400.0` | sinusoid period (s) |
+| **2.6** | `cw_t_mean_k` | `float` | `288.15` | CW inlet baseline (K) |
+| **2.6** | `cw_t_amplitude_k` | `float` | `0.0` | seasonal sinusoid amplitude (K) |
+| **2.6** | `cw_t_period_s` | `float` | `604800.0` | seasonal period (s) |
+| **2.6** | `cw_p_nominal_pa` | `float` | `4.0e5` | nominal CW pressure (Pa) |
+| **2.6** | `cw_p_drift_pa_per_h` | `float` | `0.0` | slow drift (Pa/h) |
+| **2.6** | `cw_p_noise_pa` | `float` | `0.0` | jitter (1σ, Pa) |
+| **2.6** | `met_cw_track` | `float` | `0.3` | Tmet shift per K of CW deviation |
+| **2.6** | `oil_ambient_track` | `float` | `0.7` | Toil shift per K of ambient deviation |
+| **2.6** | `qheat_cw_scaling` | `bool` | `True` | Qheat ∝ Pwater_cw / cw_p_nominal_pa |
+| **2.6b** | `cw_pump_low_factor` | `float` | `0.3` | pressure floor during trip |
+| **2.6b** | `cw_pump_ramp_s` | `float` | `30.0` | ramp down + ramp up (s) |
+| **2.6b** | `cw_pump_default_duration_s` | `float` | `600.0` | default trip duration when FaultSpec omits one |
+| **2.7** | `live_ambient_mean_k` | `float \| None` | `None` | operator override for `ambient_t_mean_k` |
+| **2.7** | `live_ambient_amplitude_k` | `float \| None` | `None` | operator override for `ambient_t_amplitude_k` |
+| **2.7** | `live_cw_t_mean_k` | `float \| None` | `None` | operator override for `cw_t_mean_k` |
+| **2.7** | `live_cw_p_drift_pa_per_h` | `float \| None` | `None` | operator override for `cw_p_drift_pa_per_h` |
+| **2.4** | `pump_wear` | `bool` | `False` | enables pump_health sv slot |
+| **2.4** | `valve_wear` | `bool` | `False` | enables valve_stiction_pct sv slot |
+| **2.4** | `pump_health_initial` | `float` | `1.0` | 1.0 = brand new, 0.05 = floor |
+| **2.4** | `pump_wear_rate_per_h` | `float` | `0.01` | dh/dt baseline at nominal flow |
+| **2.4** | `pump_wear_flow_exponent` | `float` | `1.5` | dh/dt ∝ (Q/Qnom)^p |
+| **2.4** | `pump_wear_floor` | `float` | `0.05` | post-integration clamp |
+| **2.4** | `pump_health_trip_threshold` | `float` | `0.25` | scenario-side trip likely below this |
+| **2.4** | `valve_stiction_initial_pct` | `float` | `0.0` | 0 % = pristine, 100 % = full-stroke stuck |
+| **2.4** | `valve_stiction_rate_pct_per_h` | `float` | `0.05` | grows proportional to `\|dlift/dt\|` |
+| **2.4** | `valve_stiction_floor_pct` | `float` | `0.0` | lower bound |
+| **2.4** | `valve_stiction_ceiling_pct` | `float` | `60.0` | above this → loop unstable |
+| **2.8a** | `spectrum_enabled` | `bool` | `False` | master switch for NIR/IR sensor |
+| **2.8a** | `spctr_t` | `float` | `3600.0` | spectrum sampling period (s) |
+| **2.8a** | `spctr_cs` | `int` | `2` | Skoog photometric noise level (0..3) |
+| **2.8a** | `spctr_snr_db` | `float` | `30.0` | AWGN SNR |
+| **2.8a** | `spctr_k` | `float` | `0.03` | photometric noise scale |
+| **2.8a** | `spctr_drift_a` | `float` | `0.01` | scatter baseline |
+| **2.8a** | `spctr_drift_b` | `float` | `0.0001` | scatter linear term |
+| **2.8a** | `spctr_drift_c` | `float` | `1.05` | scatter scaling term |
+| **2.8a** | `spectra_ref_path` | `str \| None` | `None` | override reference spectra CSV |
+| **2.8b** | `fouling_mode` | `int` | `0` | 0..5 — global mode selector (matches upstream) |
+| **2.8b** | `fouling_mode_xRG_weight` | `bool` | `True` | mode 4 couples to glycerol mole fraction |
+| **2.8b** | `fouling_ar_eps_std` | `float` | `5e-4` | ARMAX innovation σ (modes 4/5) |
+| **2.8b** | `fouling_mode_default_window_s` | `float` | `3600.0` | default fault-window length |
+| **2.8b** | `fouling_mode_active_mode` | `int` | `0` | runtime overlay: 0 = off, 4 / 5 = ARMAX |
+| **2.8b** | `fouling_mode_active_end_t` | `float` | `-1.0` | sim time at which the active window expires |
+| **2.8b** | `fouling_mode_active_seed` | `int \| None` | `None` | optional seed for ARMAX RNG (reproducibility) |
 
 > Tip: named profiles (runtime default vs legacy fingerprint) are in [`docs/00-orientation/Byte-identical-contract.md`](docs/00-orientation/Byte-identical-contract.md).
 
@@ -259,7 +295,6 @@ class ProcessFaults:
 - **Layer 2.4 valve stiction only grows when valves move.** Idle valves (`dlift = 0`) accumulate zero stiction per second. To see stiction grow in a demo, drive the PID loop with a Qheat dip or feedstock change — the control valves chasing the new setpoint is what builds stiction.
 - **`res.disturbances` is `None` unless you set disturbance amplitudes.** The kernel skips the path entirely when all amplitudes are zero (legacy byte-identical contract). Set at least one to nonzero.
 - **Live path and batch path have different fingerprints** even at the same seed. The legacy batch pin `sv=c8807b23...` requires `fouling_dynamic=False`. The live legacy baseline is `sv=23c3c885...`. Both are pinned.
-- **`LiveSimulator.t` raises IndexError after the run completes** if you haven't installed the post-run fix (`v0.4.1+`). It returns `settings.tf` instead. The dashboard depends on this — make sure your install is current.
 - **Numba caches are in `__pycache__/`** and `bdsim/*.nbi`. After major kernel changes, delete the cache: `find . -name "*.nbi" -delete && find . -name "__pycache__" -exec rm -rf {} +`.
 
 ## Where to look next

@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-flight runs for the same branch on a new push.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    name: pytest (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Pin to the lockfile-resolved Python floor (`pyproject.toml`
+        # `requires-python = ">=3.10"`). The reference stack that
+        # produces the 1.1.1 fingerprint pins is Python 3.10.
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Sync dependencies (lockfile-resolved)
+        run: uv sync --extra test --python ${{ matrix.python-version }}
+
+      - name: Verify numerical stack
+        # numpy / scipy / numba versions are pinned in uv.lock; printing
+        # them in CI logs makes fingerprint-drift debugging trivial.
+        run: |
+          uv run python -c "import numpy, scipy, numba; \
+            print(numpy.__version__, scipy.__version__, numba.__version__)"
+
+      - name: Run smoke tests
+        run: uv run python -m pytest tests/test_smoke.py -q
+
+      - name: Run full test suite
+        # Numba JIT cache is warmed by the smoke run; the rest is fast.
+        run: uv run python -m pytest tests/ -q
+
+  ruff:
+    name: ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v1
+        with:
+          # No formatter action — the repo doesn't ship a ruff.toml and
+          # we don't want to introduce formatting churn as part of CI.
+          args: check

@@ -93,7 +93,7 @@ bdsim/
 ├── fouling_modes.py    # Layer 2.8b: five-mode fouling factor stepper
 ├── simulation.py       # run, run_with — the main driver
 ├── live_simulator.py   # LiveSimulator — per-step driver for the dashboard
-├── plots.py            # 9-figure matplotlib block + CSV writer
+├── plots.py            # 9-figure Plotly block + CSV writer
 └── cli.py              # `python -m bdsim` entry point
 tests/
 ├── test_smoke.py             # smoke tests (run with `pytest`)
@@ -123,7 +123,9 @@ results/                # default output directory (created on first run)
 
 ## Performance
 
-72-hour upstream-default simulation, single CPU core:
+72-hour upstream-default simulation, single CPU core
+(benchmarks captured 2026-07-13 on the bdsim-dashboard reference host,
+Python 3.10 / macOS arm64 / `uv.lock`-resolved stack):
 
 | Stack | Wall time | Speedup |
 |---|---|---|
@@ -165,8 +167,9 @@ Issues and pull requests are welcome. Before opening a PR, please:
 1. **Read [`AGENTS.md`](AGENTS.md)** for build conventions and the
    fingerprint-regression contract.
 2. **Don't change the ODE math without a failing test first.** The Numba-JIT
-   kernels pin a SHA-256 fingerprint per profile (`tests/test_smoke.py`,
-   `tests/test_live_simulator.py`). Any numerical change updates the pin and
+   kernels pin a SHA-256 fingerprint per profile (`tests/test_live_simulator.py`
+   and the per-Layer test files; `tests/test_smoke.py` checks shapes and
+   determinism only — no SHA pins). Any numerical change updates the pin and
    must be called out in the PR description.
 3. **Don't add a new top-level dependency without asking.** The current stack
    (numpy/scipy/numba/torch) is intentional.

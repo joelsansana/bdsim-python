@@ -73,7 +73,7 @@ pv (display):
   DP:   4245.07 - 11562.19 Pa                         ✓ was −1312 to 19157
 ```
 
-All 12 smoke tests still pass.
+All 14 smoke tests still pass.
 
 ### If you need the upstream-faithful noise back
 
@@ -134,4 +134,4 @@ fig06: setpoint 50.00  measurement 45.98–50.21  state 46.24–50.00 (TD loop, 
 fig03: Tmet 46.61–53.40 °C  order_lift_oil 39.62–41.93 %
 ```
 
-All 12 smoke tests still pass.
+All 14 smoke tests still pass.

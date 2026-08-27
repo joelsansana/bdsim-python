@@ -215,22 +215,3 @@ class FoulingModeStepper:
         self._rf_old = 0.0
         self._epsilon_old = 0.0
         self._tau = 0.0
-
-
-# -----------------------------------------------------------------------------
-# Module-level helpers used by the LiveSimulator
-# -----------------------------------------------------------------------------
-
-def factor_for_window(
-    stepper: FoulingModeStepper,
-    t: float,
-    mode: int | FoulingMode,
-    xRG: float,
-    rng: np.random.Generator,
-) -> tuple[float, float]:
-    """One-step driver for the windowed mode-4/5 path.
-
-    Thin wrapper that gives the :class:`LiveSimulator` kernel a stable
-    call site (one function name, no enum-import gymnastics).
-    """
-    return stepper.step(t=t, mode=mode, xRG=xRG, rng=rng)

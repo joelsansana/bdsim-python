@@ -378,25 +378,44 @@ def test_sensor_stuck_holds_last_published_value() -> None:
 
 def test_stuck_does_not_update_from_dropout() -> None:
     """If a sensor is in dropout (publishes NaN), a later stuck event must
-    NOT latch onto the NaN — it should latch onto the last finite value.
-    This is the practical interpretation of Q1 (last published = last
-    finite value the operator actually saw).
+    NOT latch onto the NaN — it should latch onto the last *finite*
+    value cached by ``_update_last_published``. This is the practical
+    interpretation of Q1 (last published = last finite value the operator
+    actually saw).
     """
     sim = LiveSimulator(settings=_make_short_settings(), seed=42)
 
+    # 1. Run a few clean steps and capture the last finite pv[1].
     last_finite_before_dropout: float | None = None
-    while not sim.done:
+    while not sim.done and sim.t < 300.0:
         r = sim.step()
-        if r.t >= 300.0 and np.isfinite(r.pv[1]):
+        if np.isfinite(r.pv[1]):
             last_finite_before_dropout = float(r.pv[1])
-            sim.sensor_faults.dropouts.add(1)
-            sim.sensor_faults.stuck[1] = r.t            # stuck at "now"
-
-    assert last_finite_before_dropout is not None
-    # The stuck value should equal the last finite value (not NaN).
-    # Confirm by clearing the dropout and re-running a no-fault step
-    # mentally — the held value must equal last_finite_before_dropout.
+    assert last_finite_before_dropout is not None, "no finite pv[1] before t=300s"
     assert np.isfinite(last_finite_before_dropout)
+
+    # 2. Drop out sensor 1 and continue stepping so any subsequent NaN
+    #    is published (but does NOT update the last-published cache).
+    sim.sensor_faults.dropouts.add(1)
+    while not sim.done and sim.t < 700.0:
+        r = sim.step()
+        if r.t > 400.0 and 1 in sim.sensor_faults.dropouts:
+            # pv[1] should be NaN throughout the dropout window.
+            assert not np.isfinite(r.pv[1]), (
+                f"sensor 1 published a finite value during dropout at t={r.t}"
+            )
+
+    # 3. Now arm the stuck fault. The simulator must read
+    #    ``_last_published[1]`` (the cached finite value), NOT the NaN
+    #    currently in pv[1].
+    sim.sensor_faults.stuck[1] = sim.t
+    r_stuck = sim.step()
+    assert np.isfinite(r_stuck.pv[1]), (
+        "sensor 1 latched onto NaN; should have latched onto last finite"
+    )
+    assert r_stuck.pv[1] == pytest.approx(last_finite_before_dropout), (
+        f"stuck value {r_stuck.pv[1]} != last finite {last_finite_before_dropout}"
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -42,6 +42,7 @@ Junior onboarding hub for the **bdsim** plant simulator. This vault explains *ho
 - [[Live-simulator]]
 - [[Fingerprints-and-tests]]
 - [[Layers-roadmap]]
+- [[Fouling-modes]] (Layer 2.8b five-mode stepper walkthrough)
 
 ### Helpers
 - [[Acronyms]]

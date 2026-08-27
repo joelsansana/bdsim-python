@@ -8,8 +8,14 @@ so that ``run()`` reproduces the upstream trajectory to within solver tolerance.
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
 import numpy as np
+
+if TYPE_CHECKING:
+    from .spectra import SpectrumSample
 
 
 # -----------------------------------------------------------------------------
@@ -84,8 +90,6 @@ class Parameters:
     # Derived: filled by :meth:`finalize`
     vmol: np.ndarray | None = None
     cpmolm: float = 0.0                                        # populated by finalize
-    vmolo_local: float = 0.0
-    cpmolo_local: float = 0.0
 
     # Filter constants — populated from process faults at startup
     K1F: float = 0.0
@@ -139,9 +143,6 @@ class Parameters:
     def finalize(self) -> None:
         """Recompute derived quantities that depend on M and ro."""
         self.vmol = self.M / self.ro
-        self.vmolo_local = self.vmolo
-        self.cpmolo_local = self.cpmolo
-        self.cpmolm = self.cpmolm
 
     def apply_layer24_overrides(self, pfaults: ProcessFaults) -> None:
         """Apply Layer 2.4 kinetics overrides from ``pfaults``.
@@ -633,11 +634,20 @@ class Settings:
     nic: int = 4                                              # controller update every nic steps
 
     # ------------------------------------------------------------------ #
-    # Live-mutable setpoints (Roadmap step 4). The ``LiveSimulator`` mirrors
-    # the scalar ``sp1..sp4`` into these on construction; ``POST /control``
-    # writes into them so the PID picks up the change on the next ``nic``
-    # boundary. The mirror is kept in sync — callers should not write to
-    # both.
+    # Live-mutable setpoints (Roadmap step 4). The ``LiveSimulator`` reads
+    # these on every PID tick; ``POST /control`` writes into them so the
+    # PID picks up the change on the next ``nic`` boundary.
+    #
+    # Important: ``simulation.run_with`` (the batch driver) does NOT honor
+    # ``live_sp*`` — it reads the static ``sp1..sp4`` once at setup. Mutating
+    # ``live_sp*`` only takes effect via ``LiveSimulator``. If you need a
+    # setpoint sweep in a batch run, edit ``sp1..sp4`` directly before calling
+    # ``run_with`` (or use the pre-baked ``sp[:, 3] += 100.0 * heaviside(...)``
+    # style that simulation.py uses for ``sp4``).
+    #
+    # The ``__post_init__`` mirror keeps ``live_sp*`` seeded from ``sp*`` so
+    # a freshly-built ``LiveSimulator`` starts at the documented setpoints.
+    # Do not write to ``sp*`` and ``live_sp*`` separately — pick one.
     # ------------------------------------------------------------------ #
     live_sp1: float = 0.0
     live_sp2: float = 0.0
@@ -645,9 +655,6 @@ class Settings:
     live_sp4: float = 0.0
 
     def __post_init__(self) -> None:
-        # Always re-sync from the scalar defaults after dataclass init.
-        # The ``live_sp*`` fields exist so external code can mutate them
-        # at runtime; the baseline values come from ``sp1..sp4``.
         self.live_sp1 = self.sp1
         self.live_sp2 = self.sp2
         self.live_sp3 = self.sp3
@@ -690,7 +697,7 @@ class StepResult:
     disturbances: np.ndarray | None = None                  # Layer 2.6: (3,) [Tamb, Tcw, Pcw]; None when off
     xLend: np.ndarray | None = None                         # washer/dryer output, (6,)
     yLend: np.ndarray | None = None                         # dryer mass fractions, (6,)
-    spectra: object | None = None                           # Layer 2.8: SpectrumSample at fire times, else None
+    spectra: SpectrumSample | None = None                    # Layer 2.8: SpectrumSample at fire times, else None
 
 
 # -----------------------------------------------------------------------------
@@ -733,7 +740,6 @@ class Results:
 
         Returns a *new* Results object; original data is unchanged.
         """
-        import copy
         r = copy.deepcopy(self)
 
         r.uv[:, 1] -= 273.15

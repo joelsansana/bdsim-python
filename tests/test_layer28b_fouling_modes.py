@@ -9,7 +9,6 @@ Covers:
   * Priority semantics — mode-0 path returns 0 and resets state.
   * State visibility — snapshot/restore roundtrip preserves explicit
     ARMAX state (replaces upstream ``persistent`` MATLAB variables).
-  * factor_for_window helper is a thin pass-through.
 
 These tests are pure-Python; no Numba JIT, no integration with the
 ODE kernel. LiveSimulator wiring is tested separately.
@@ -25,7 +24,6 @@ import pytest
 from bdsim.fouling_modes import (
     FoulingMode,
     FoulingModeStepper,
-    factor_for_window,
 )
 
 
@@ -181,14 +179,12 @@ def test_mode_5_rfouling_is_just_epsilon():
     """Mode 5: rfouling at step k equals epsilon_k (since rf_old = 0)."""
     st = FoulingModeStepper()
     rng = np.random.default_rng(123)
-    last_eps = 0.0
     for _ in range(20):
         f, r = st.step(t=100.0, mode=FoulingMode.ARMAX_PURE_NOISE,
                        xRG=0.05, rng=rng)
         # rfouling should equal the most recent epsilon (clamped to >=0)
         snap = st.snapshot()
         assert r == pytest.approx(max(0.0, snap["epsilon_old"]))
-        last_eps = snap["epsilon_old"]
 
 
 def test_mode_4_factor_strictly_in_unit_interval():
@@ -313,19 +309,6 @@ def test_unknown_mode_raises():
         st.step(t=100.0, mode=6)
     with pytest.raises(ValueError, match="unknown fouling mode"):
         st.step(t=100.0, mode=-1)
-
-
-def test_factor_for_window_is_passthrough():
-    """factor_for_window is a thin convenience wrapper over stepper.step."""
-    st = FoulingModeStepper()
-    rng = np.random.default_rng(0)
-    f_helper, r_helper = factor_for_window(
-        stepper=st, t=100.0, mode=FoulingMode.LINEAR, xRG=0.0, rng=rng
-    )
-    st2 = FoulingModeStepper()
-    f_direct, r_direct = st2.step(t=100.0, mode=FoulingMode.LINEAR)
-    assert f_helper == pytest.approx(f_direct)
-    assert r_helper == pytest.approx(r_direct)
 
 
 # ---------------------------------------------------------------------------

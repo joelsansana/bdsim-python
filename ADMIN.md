@@ -89,7 +89,7 @@ uv run python -m pytest tests/test_smoke.py -q
 
 ## Fingerprint regression
 
-`tests/test_smoke.py` and `tests/test_live_simulator.py` pin SHA-256 fingerprints over the full trajectory. A silent numerical drift in a kernel will fail loud.
+`tests/test_live_simulator.py` (and the per-Layer tests) pin SHA-256 fingerprints over the full trajectory. `tests/test_smoke.py` checks shapes, physical ranges, and determinism only — no SHA pins. A silent numerical drift in a kernel will fail loud.
 
 Named profiles (see `docs/00-orientation/Byte-identical-contract.md` and `AGENTS.md`):
 
@@ -145,7 +145,7 @@ If you ever need bdsim to run as a long-lived process for some other consumer, t
 
 - **Original MATLAB:** Natércia C. P. Fernandes, 2019, University of Coimbra (`natercia@eq.uc.pt`). Upstream: `https://github.com/naterciafernandes/BDSIM`.
 - **Docs vault:** [`docs/Home.md`](docs/Home.md) (see [`docs/README.md`](docs/README.md)).
-- **Optional PDFs:** `Fernandes2019_BDSIM.pdf` and `manual.pdf` are gitignored at the repo root — drop local copies if you have them; not required to run.
+- **Optional PDFs:** `Fernandes2019_BDSIM.pdf` and `manual.pdf` are gitignored under `docs/` (see `.gitignore`) — drop local copies there if you have them; not required to run.
 - **Citation:** [`CITATION.cff`](CITATION.cff).
 - **License:** GPLv3+ (matches upstream); see [`LICENSE`](LICENSE).
 - **Maintainer scripts:** [`scripts/`](scripts/) — optional utilities only (see `scripts/README.md`).
