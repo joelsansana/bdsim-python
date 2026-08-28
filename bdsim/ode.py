@@ -144,16 +144,18 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
     nc = 6
     # NOTE: dsvdt is sized to match the working state vector. Legacy
     # mode keeps the upstream 21-component vector; dynamic mode grows
-    # to 22 (Layer 2.5); quality mode grows to 28 (Layer 2.1 adds 6);
-    # Layer 2.4 adds 1 (pump) and 1 (valve) on top of whatever else
-    # is enabled. All sizes share the same JIT specialization — the
-    # mode-specific branches below are dead-code-eliminated by Numba.
-    if use_quality_state:
-        dsvdt = np.zeros(28 + (1 if use_pump_wear else 0) + (1 if use_valve_wear else 0))
-    elif use_dynamic_alpha:
-        dsvdt = np.zeros(22 + (1 if use_pump_wear else 0) + (1 if use_valve_wear else 0))
-    else:
-        dsvdt = np.zeros(21 + (1 if use_pump_wear else 0) + (1 if use_valve_wear else 0))
+    # to 22 (Layer 2.5); quality mode grows to 27 (Layer 2.1 adds 6
+    # on top of the legacy 21); Layer 2.4 adds 1 (pump) and 1 (valve)
+    # on top of whatever else is enabled. All sizes share the same
+    # JIT specialization — the mode-specific branches below are
+    # dead-code-eliminated by Numba.
+    dsvdt = np.zeros(
+        21
+        + (1 if use_dynamic_alpha else 0)
+        + (6 if use_quality_state else 0)
+        + (1 if use_pump_wear else 0)
+        + (1 if use_valve_wear else 0)
+    )
 
     # Layer 2.4 slot indices. Compute once here so the dynamics
     # blocks below write into the correct row regardless of which

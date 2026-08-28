@@ -231,8 +231,8 @@ unexpected trajectories.
 | (legacy) | `ratio_robs_r` | `float` | `0.9` | side-reaction deactivation factor |
 | (legacy) | `fouling` | `int` | `1` | 0 = off, 1 = on (pre-Layer 2.5 series) |
 | (legacy) | `foulingpar` | `np.ndarray` | `[3e-7]` | fouling rate parameter |
-| **2.5** | `fouling_dynamic` | `bool` | **`True`** | α evolves as an ODE state (default ON; turn off for legacy fingerprint) |
-| **2.1** | `quality_state` | `bool` | `False` | master switch — adds 6 sv slots, latched QA channels |
+| **2.5** | `fouling_dynamic` | `bool` | **`True`** | α evolves as an ODE state (turn off for legacy fingerprint) |
+| **2.1** | `quality_state` | `bool` | **`True`** | master switch — adds 6 sv slots, latched QA channels (turn off for legacy fingerprint) |
 | **2.1** | `quality_lag_mode` | `str` | `"lab"` | `"lab"` (15 min) or `"online"` (60 s) |
 | **2.1** | `lab_cycle_s` | `float` | `900.0` | lab sampling period |
 | **2.1** | `online_cycle_s` | `float` | `60.0` | NIR sampling period |
@@ -258,8 +258,8 @@ unexpected trajectories.
 | **2.7** | `live_ambient_amplitude_k` | `float \| None` | `None` | operator override for `ambient_t_amplitude_k` |
 | **2.7** | `live_cw_t_mean_k` | `float \| None` | `None` | operator override for `cw_t_mean_k` |
 | **2.7** | `live_cw_p_drift_pa_per_h` | `float \| None` | `None` | operator override for `cw_p_drift_pa_per_h` |
-| **2.4** | `pump_wear` | `bool` | `False` | enables pump_health sv slot |
-| **2.4** | `valve_wear` | `bool` | `False` | enables valve_stiction_pct sv slot |
+| **2.4** | `pump_wear` | `bool` | **`True`** | enables pump_health sv slot |
+| **2.4** | `valve_wear` | `bool` | **`True`** | enables valve_stiction_pct sv slot |
 | **2.4** | `pump_health_initial` | `float` | `1.0` | 1.0 = brand new, 0.05 = floor |
 | **2.4** | `pump_wear_rate_per_h` | `float` | `0.01` | dh/dt baseline at nominal flow |
 | **2.4** | `pump_wear_flow_exponent` | `float` | `1.5` | dh/dt ∝ (Q/Qnom)^p |
@@ -269,7 +269,7 @@ unexpected trajectories.
 | **2.4** | `valve_stiction_rate_pct_per_h` | `float` | `0.05` | grows proportional to `\|dlift/dt\|` |
 | **2.4** | `valve_stiction_floor_pct` | `float` | `0.0` | lower bound |
 | **2.4** | `valve_stiction_ceiling_pct` | `float` | `60.0` | above this → loop unstable |
-| **2.8a** | `spectrum_enabled` | `bool` | `False` | master switch for NIR/IR sensor |
+| **2.8a** | `spectrum_enabled` | `bool` | **`True`** | master switch for NIR/IR sensor |
 | **2.8a** | `spctr_t` | `float` | `3600.0` | spectrum sampling period (s) |
 | **2.8a** | `spctr_cs` | `int` | `2` | Skoog photometric noise level (0..3) |
 | **2.8a** | `spctr_snr_db` | `float` | `30.0` | AWGN SNR |
@@ -290,7 +290,7 @@ unexpected trajectories.
 
 ## Common gotchas
 
-- **Runtime default includes Layer 2.5.** `ProcessFaults()` has `fouling_dynamic=True` → `sv.shape[1] == 22` (`α` at `sv[21]`). The legacy 21-wide vector needs `fouling_dynamic=False`. Layer 2.1 quality mode and Layer 2.4 wear flags widen further. If you trained a model on a 21-wide vector, re-train or pin the legacy profile explicitly.
+- **Runtime default enables Layers 2.5 + 2.1 + 2.4 (both) + 2.8a.** `ProcessFaults()` has `fouling_dynamic=True, quality_state=True, pump_wear=True, valve_wear=True, spectrum_enabled=True` → `sv.shape[1] == 30`. The legacy 21-wide vector needs every relevant flag passed `False` explicitly. Layer 2.5 only (22-wide) needs `quality_state=False, pump_wear=False, valve_wear=False`. If you trained a model on a 21-wide or 22-wide vector, re-train or pin the legacy profile explicitly.
 - **Layer 2.4 `pump_health` multiplies the published PCW track.** When `pump_wear=True`, the `disturbances[i, 2]` channel reads 0.7× baseline when `pump_health=0.7`. The kernel applies the same factor on `u[4]` (Qheat) so the reactor temperature responds. Two independent multiplicative effects can stack: the Layer 2.6b `cw_pump_trip` override and the wear multiplier both act on the PCW channel.
 - **Layer 2.4 valve stiction only grows when valves move.** Idle valves (`dlift = 0`) accumulate zero stiction per second. To see stiction grow in a demo, drive the PID loop with a Qheat dip or feedstock change — the control valves chasing the new setpoint is what builds stiction.
 - **`res.disturbances` is `None` unless you set disturbance amplitudes.** The kernel skips the path entirely when all amplitudes are zero (legacy byte-identical contract). Set at least one to nonzero.

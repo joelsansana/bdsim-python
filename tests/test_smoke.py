@@ -124,7 +124,15 @@ def test_smoke_run():
     for the new HEX-fouling dynamics (Roadmap Layer 2.5).
     """
     from bdsim.config import Settings, ProcessFaults
-    pfaults = ProcessFaults(fouling_dynamic=False)
+    # Legacy profile: explicit overrides for every Layer master now
+    # default-ON (1.2.0+).
+    pfaults = ProcessFaults(
+        fouling_dynamic=False,
+        quality_state=False,
+        pump_wear=False,
+        valve_wear=False,
+        spectrum_enabled=False,
+    )
     settings = Settings(ti=0.0, tf=10_000.0, dt=5.0)
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
 
@@ -159,7 +167,14 @@ def test_smoke_run():
 def test_smoke_run_with_seed_is_deterministic():
     """Same seed → same trajectories (short horizon, legacy mode)."""
     from bdsim.config import Settings, ProcessFaults
-    pfaults = ProcessFaults(fouling_dynamic=False)
+    # Legacy profile (21-component state).
+    pfaults = ProcessFaults(
+        fouling_dynamic=False,
+        quality_state=False,
+        pump_wear=False,
+        valve_wear=False,
+        spectrum_enabled=False,
+    )
     settings = Settings(ti=0.0, tf=5_000.0, dt=5.0)
     r1 = run_with(settings=settings, pfaults=pfaults, seed=123, verbose=False)
     r2 = run_with(settings=settings, pfaults=pfaults, seed=123, verbose=False)
@@ -175,7 +190,16 @@ def test_smoke_run_dynamic_22_state_components():
     — for a 10 000 s run we expect α > initial 0.05 and α < 0.5.
     """
     from bdsim.config import Settings, ProcessFaults
-    pfaults = ProcessFaults(fouling_dynamic=True)
+    # Layer 2.5-only profile (22-component state). Explicit overrides
+    # for the other Layer masters default-ON as of 1.2.0+ so this test
+    # stays a clean 22-component trajectory.
+    pfaults = ProcessFaults(
+        fouling_dynamic=True,
+        quality_state=False,
+        pump_wear=False,
+        valve_wear=False,
+        spectrum_enabled=False,
+    )
     settings = Settings(ti=0.0, tf=10_000.0, dt=5.0)
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
 
@@ -192,7 +216,13 @@ def test_smoke_run_dynamic_22_state_components():
 def test_smoke_run_dynamic_clamps_alpha_on_cleaning():
     """A cleaning event snaps α to alpha_clean (0.1) and clamps it in [0, 1]."""
     from bdsim.config import Settings, ProcessFaults
-    pfaults = ProcessFaults(fouling_dynamic=True)
+    # Layer 2.5-only profile (22-component state).
+    pfaults = ProcessFaults(
+        fouling_dynamic=True,
+        quality_state=False,
+        pump_wear=False,
+        valve_wear=False,
+    )
     settings = Settings(ti=0.0, tf=500.0, dt=5.0)
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
     alpha = res.sv[:, 21]
@@ -205,6 +235,17 @@ def test_smoke_run_dynamic_clamps_alpha_on_cleaning():
 def test_smoke_run_no_clogging():
     """With clogging disabled the filter radius stays constant."""
     from bdsim.config import ProcessFaults
-    pfaults = ProcessFaults(clog_fraction=0.0, fouling=0, foulingpar=np.array([0.0]))
+    # Legacy profile (21-component state). Explicit overrides for the
+    # other Layer masters default-ON as of 1.2.0+ so the assertion on
+    # sv[:, 18] (filter pore radius) is unaffected by the wear / quality
+    # slots.
+    pfaults = ProcessFaults(
+        clog_fraction=0.0, fouling=0, foulingpar=np.array([0.0]),
+        fouling_dynamic=False,
+        quality_state=False,
+        pump_wear=False,
+        valve_wear=False,
+        spectrum_enabled=False,
+    )
     res = run_with(pfaults=pfaults, seed=7, verbose=False)
     np.testing.assert_allclose(res.sv[:, 18], res.sv[0, 18], atol=1e-6)

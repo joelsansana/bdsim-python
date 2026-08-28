@@ -37,16 +37,16 @@ def _fingerprint(arr: np.ndarray) -> str:
 # --------------------------------------------------------------------------- #
 
 
-def test_pump_wear_and_valve_wear_default_false() -> None:
-    """Both Layer 2.4 master switches default to False.
+def test_pump_wear_and_valve_wear_default_true() -> None:
+    """Layer 2.4 master switches default to True as of 1.2.0.
 
-    No pump or valve continuous state slots are created in the
-    kernel. The state vector shape matches whatever Layer 2.5 / 2.1
-    has enabled, plus zero Layer 2.4 slots.
+    Bare ``ProcessFaults()`` enables both ``pump_wear`` and
+    ``valve_wear``. Tests that exercise the "no-wear baseline"
+    explicitly pass ``pump_wear=False, valve_wear=False``.
     """
     pfaults = ProcessFaults()
-    assert pfaults.pump_wear is False
-    assert pfaults.valve_wear is False
+    assert pfaults.pump_wear is True
+    assert pfaults.valve_wear is True
     assert pfaults.pump_health_initial == 1.0
     assert pfaults.valve_stiction_initial_pct == 0.0
 
@@ -78,7 +78,15 @@ def test_legacy_72h_fingerprint_preserved_with_no_wear() -> None:
 def test_pump_wear_alone_extends_sv_by_one() -> None:
     """``pump_wear=True`` (only) grows the state vector by 1 slot (sv[22])."""
     settings = Settings()
-    pfaults_pump = ProcessFaults(pump_wear=True, valve_wear=False)
+    # Layer 2.5-only baseline (22-wide) + Layer 2.4 pump. Explicit
+    # overrides for the other Layer masters (default-ON as of 1.2.0)
+    # so this test's sv-width assertion below holds.
+    pfaults_pump = ProcessFaults(
+        quality_state=False,
+        spectrum_enabled=False,
+        pump_wear=True,
+        valve_wear=False,
+    )
     res = run_with(settings=settings, pfaults=pfaults_pump, seed=42, verbose=False)
     # Default Layer 2.5 dynamic (22 components) + 1 pump = 23
     assert res.sv.shape == (52000, 23)
@@ -90,7 +98,12 @@ def test_pump_wear_alone_extends_sv_by_one() -> None:
 def test_valve_wear_alone_extends_sv_by_one() -> None:
     """``valve_wear=True`` (only) grows the state vector by 1 slot (sv[22])."""
     settings = Settings()
-    pfaults_valve = ProcessFaults(pump_wear=False, valve_wear=True)
+    pfaults_valve = ProcessFaults(
+        quality_state=False,
+        spectrum_enabled=False,
+        pump_wear=False,
+        valve_wear=True,
+    )
     res = run_with(settings=settings, pfaults=pfaults_valve, seed=42, verbose=False)
     assert res.sv.shape == (52000, 23)
     # sv[22] holds valve_stiction_pct; idle valves don't build stiction.
@@ -100,7 +113,12 @@ def test_valve_wear_alone_extends_sv_by_one() -> None:
 def test_both_wear_switches_extend_sv_by_two() -> None:
     """Both switches on grow the state vector by 2 slots (sv[22] + sv[23])."""
     settings = Settings()
-    pfaults_both = ProcessFaults(pump_wear=True, valve_wear=True)
+    pfaults_both = ProcessFaults(
+        quality_state=False,
+        spectrum_enabled=False,
+        pump_wear=True,
+        valve_wear=True,
+    )
     res = run_with(settings=settings, pfaults=pfaults_both, seed=42, verbose=False)
     assert res.sv.shape == (52000, 24)
     # Slot allocation: pump first, valve second.
@@ -121,7 +139,14 @@ def test_pump_health_walks_toward_floor() -> None:
     0.01/h × 72 h = 0.72, landing pump_health at ≈ 0.28.
     """
     settings = Settings()                                          # canonical 72 h
-    pfaults = ProcessFaults(pump_wear=True, pump_wear_rate_per_h=0.01)
+    # Layer 2.5 + Layer 2.4 pump (no Layer 2.1, no Layer 2.8a). Explicit
+    # overrides for the broader defaults introduced in 1.2.0.
+    pfaults = ProcessFaults(
+        quality_state=False,
+        spectrum_enabled=False,
+        pump_wear=True,
+        pump_wear_rate_per_h=0.01,
+    )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
     end = float(res.sv[-1, 22])
     assert end < 1.0
@@ -139,7 +164,10 @@ def test_valve_stiction_grows_with_motion() -> None:
     fingerprint pin will catch any silent change to the kinematics.
     """
     settings = Settings()
+    # Layer 2.5 + Layer 2.4 valve (no Layer 2.1, no Layer 2.8a).
     pfaults = ProcessFaults(
+        quality_state=False,
+        spectrum_enabled=False,
         valve_wear=True,
         valve_stiction_rate_pct_per_h=5.0,                    # 100× baseline for visible motion response
     )
@@ -161,6 +189,8 @@ def test_valve_stiction_does_not_grow_when_disabled() -> None:
     """
     settings = Settings()
     pfaults = ProcessFaults(
+        quality_state=False,
+        spectrum_enabled=False,
         pump_wear=True, valve_wear=False,
         pump_health_initial=0.7,
     )
@@ -186,6 +216,8 @@ def test_worn_pump_publishes_lower_cw_pressure() -> None:
     # itself is what we want to test, not the dynamics.
     settings = Settings(ti=0.0, tf=600.0, dt=5.0)
     pfaults = ProcessFaults(
+        quality_state=False,
+        spectrum_enabled=False,
         pump_wear=True,
         valve_wear=False,
         pump_health_initial=0.7,
@@ -211,7 +243,15 @@ def test_worn_pump_publishes_lower_cw_pressure() -> None:
 def test_set_pump_health_snap_within_envelope() -> None:
     """``set_pump_health(0.7)`` writes 0.7 to sv[22] at the current step."""
     settings = Settings(ti=0.0, tf=600.0, dt=5.0)
-    sim = LiveSimulator(settings=settings, pfaults=ProcessFaults(pump_wear=True), seed=42)
+    sim = LiveSimulator(
+        settings=settings,
+        pfaults=ProcessFaults(
+            quality_state=False,
+            spectrum_enabled=False,
+            pump_wear=True,
+        ),
+        seed=42,
+    )
     result = sim.set_pump_health(0.7)
     assert result["knob"] == "pump_health"
     assert result["previous"] == pytest.approx(1.0)
@@ -224,7 +264,15 @@ def test_set_pump_health_snap_within_envelope() -> None:
 def test_set_pump_health_rejects_out_of_envelope() -> None:
     """Pump health below the floor or above 1.0 raises ValueError."""
     settings = Settings(ti=0.0, tf=600.0, dt=5.0)
-    sim = LiveSimulator(settings=settings, pfaults=ProcessFaults(pump_wear=True), seed=42)
+    sim = LiveSimulator(
+        settings=settings,
+        pfaults=ProcessFaults(
+            quality_state=False,
+            spectrum_enabled=False,
+            pump_wear=True,
+        ),
+        seed=42,
+    )
     with pytest.raises(ValueError, match="outside"):
         sim.set_pump_health(0.01)                                # below floor 0.05
     with pytest.raises(ValueError, match="outside"):
@@ -234,7 +282,15 @@ def test_set_pump_health_rejects_out_of_envelope() -> None:
 def test_set_pump_health_requires_pump_wear_enabled() -> None:
     """Calling ``set_pump_health`` with ``pump_wear=False`` raises RuntimeError."""
     settings = Settings(ti=0.0, tf=600.0, dt=5.0)
-    sim = LiveSimulator(settings=settings, pfaults=ProcessFaults(pump_wear=False), seed=42)
+    sim = LiveSimulator(
+        settings=settings,
+        pfaults=ProcessFaults(
+            quality_state=False,
+            spectrum_enabled=False,
+            pump_wear=False,
+        ),
+        seed=42,
+    )
     with pytest.raises(RuntimeError, match="pump_wear"):
         sim.set_pump_health(0.7)
 
@@ -244,7 +300,12 @@ def test_set_valve_stiction_snap_and_envelope() -> None:
     settings = Settings(ti=0.0, tf=600.0, dt=5.0)
     sim = LiveSimulator(
         settings=settings,
-        pfaults=ProcessFaults(pump_wear=False, valve_wear=True),
+        pfaults=ProcessFaults(
+            quality_state=False,
+            spectrum_enabled=False,
+            pump_wear=False,
+            valve_wear=True,
+        ),
         seed=42,
     )
     result = sim.set_valve_stiction_pct(20.0)
@@ -260,7 +321,12 @@ def test_get_degradation_state_reports_both_slots() -> None:
     settings = Settings(ti=0.0, tf=600.0, dt=5.0)
     sim = LiveSimulator(
         settings=settings,
-        pfaults=ProcessFaults(pump_wear=True, valve_wear=True),
+        pfaults=ProcessFaults(
+            quality_state=False,
+            spectrum_enabled=False,
+            pump_wear=True,
+            valve_wear=True,
+        ),
         seed=42,
     )
     snap = sim.get_degradation_state()
@@ -275,7 +341,16 @@ def test_get_degradation_state_reports_both_slots() -> None:
 def test_get_degradation_state_empty_when_both_disabled() -> None:
     """When both switches are off, ``get_degradation_state`` returns an empty dict."""
     settings = Settings(ti=0.0, tf=600.0, dt=5.0)
-    sim = LiveSimulator(settings=settings, pfaults=ProcessFaults(), seed=42)
+    sim = LiveSimulator(
+        settings=settings,
+        pfaults=ProcessFaults(
+            quality_state=False,
+            spectrum_enabled=False,
+            pump_wear=False,
+            valve_wear=False,
+        ),
+        seed=42,
+    )
     assert sim.get_degradation_state() == {}
 
 
@@ -292,7 +367,10 @@ def test_pump_only_72h_fingerprint_pinned() -> None:
     contract.
     """
     settings = Settings()
+    # Layer 2.5 + Layer 2.4 pump only (no Layer 2.1, no Layer 2.8a).
     pfaults = ProcessFaults(
+        quality_state=False,
+        spectrum_enabled=False,
         pump_wear=True,
         valve_wear=False,
         pump_health_initial=1.0,
@@ -307,7 +385,10 @@ def test_pump_only_72h_fingerprint_pinned() -> None:
 def test_valve_only_72h_fingerprint_pinned() -> None:
     """Valve-only configuration has a pinned hash."""
     settings = Settings()
+    # Layer 2.5 + Layer 2.4 valve only (no Layer 2.1, no Layer 2.8a).
     pfaults = ProcessFaults(
+        quality_state=False,
+        spectrum_enabled=False,
         pump_wear=False,
         valve_wear=True,
         valve_stiction_initial_pct=0.0,
@@ -322,7 +403,10 @@ def test_valve_only_72h_fingerprint_pinned() -> None:
 def test_both_wear_72h_fingerprint_pinned() -> None:
     """Both switches on has a pinned hash."""
     settings = Settings()
+    # Layer 2.5 + Layer 2.4 both (no Layer 2.1, no Layer 2.8a).
     pfaults = ProcessFaults(
+        quality_state=False,
+        spectrum_enabled=False,
         pump_wear=True,
         valve_wear=True,
         pump_health_initial=1.0,
@@ -353,7 +437,12 @@ def test_pump_trip_override_does_not_disturb_wear_state() -> None:
     settings = Settings(ti=0.0, tf=600.0, dt=5.0)
     sim = LiveSimulator(
         settings=settings,
-        pfaults=ProcessFaults(pump_wear=True, valve_wear=False),
+        pfaults=ProcessFaults(
+            quality_state=False,
+            spectrum_enabled=False,
+            pump_wear=True,
+            valve_wear=False,
+        ),
         seed=42,
     )
     # ``step()`` advances the simulator by one ODE interval; the
@@ -378,7 +467,12 @@ def test_pump_trip_override_does_not_disturb_wear_state() -> None:
 def test_pump_health_clamped_to_floor() -> None:
     """Pump health never drops below the configured floor even over very long horizons."""
     settings = Settings()
-    pfaults = ProcessFaults(pump_wear=True, pump_wear_rate_per_h=1.0)   # aggressive wear
+    pfaults = ProcessFaults(
+        quality_state=False,
+        spectrum_enabled=False,
+        pump_wear=True,
+        pump_wear_rate_per_h=1.0,                                 # aggressive wear
+    )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
     assert res.sv[-1, 22] >= pfaults.pump_wear_floor
 
@@ -387,6 +481,8 @@ def test_valve_stiction_clamped_to_ceiling() -> None:
     """Valve stiction never exceeds the configured ceiling even at high motion."""
     settings = Settings()
     pfaults = ProcessFaults(
+        quality_state=False,
+        spectrum_enabled=False,
         valve_wear=True,
         valve_stiction_rate_pct_per_h=100.0,                  # aggressive stiction build
     )

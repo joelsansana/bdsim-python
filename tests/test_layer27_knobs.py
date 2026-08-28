@@ -50,7 +50,15 @@ def test_live_knob_fields_default_to_none() -> None:
 def test_zero_amplitude_with_no_overlays_is_byte_identical_to_layer25() -> None:
     """No overlay + zero profile amplitudes → Layer 2.5/2.6 fingerprint."""
     settings = Settings()
-    pfaults = ProcessFaults(fouling_dynamic=False, quality_state=False)
+    # Legacy profile (21-component state). Explicit overrides for every
+    # Layer master now default-ON (1.2.0+).
+    pfaults = ProcessFaults(
+        fouling_dynamic=False,
+        quality_state=False,
+        pump_wear=False,
+        valve_wear=False,
+        spectrum_enabled=False,
+    )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
     # Pinned by Layer 2.5 / Step 4 regression tests (Layer 2.6 used
     # the same fingerprint when amplitudes are zero). Layers 2.5
@@ -269,9 +277,14 @@ def test_active_ambient_overlay_pinned_fingerprint() -> None:
     canonical fingerprint horizon, where the drift term dominates).
     """
     settings = Settings(ti=0.0, tf=86400.0, dt=5.0)           # 24 h
+    # Legacy profile (21-component state) + Layer 2.7 drift overlay.
+    # Explicit overrides for every Layer master now default-ON (1.2.0+).
     pfaults = ProcessFaults(
         fouling_dynamic=False,
         quality_state=False,
+        pump_wear=False,
+        valve_wear=False,
+        spectrum_enabled=False,
         live_cw_p_drift_pa_per_h=-50.0,                      # pumps slowly wearing
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
@@ -287,14 +300,22 @@ def test_active_ambient_overlay_pinned_fingerprint() -> None:
 def test_clear_overlay_after_use_restores_cleared_state() -> None:
     """Clearing an overlay after use reverts ``uv`` to the no-overlay trajectory."""
     settings = Settings(ti=0.0, tf=86400.0, dt=5.0)           # 24 h
+    # Legacy profile (21-component state). Explicit overrides for every
+    # Layer master now default-ON (1.2.0+).
     pfaults_used = ProcessFaults(
         fouling_dynamic=False,
         quality_state=False,
+        pump_wear=False,
+        valve_wear=False,
+        spectrum_enabled=False,
         live_cw_p_drift_pa_per_h=-50.0,
     )
     pfaults_cleared = ProcessFaults(
         fouling_dynamic=False,
         quality_state=False,
+        pump_wear=False,
+        valve_wear=False,
+        spectrum_enabled=False,
         live_cw_p_drift_pa_per_h=None,                       # overlay OFF
     )
     res_used = run_with(settings=settings, pfaults=pfaults_used, seed=42, verbose=False)

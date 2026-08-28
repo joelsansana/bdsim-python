@@ -26,22 +26,27 @@ Without a pin contract, “faithful port” becomes hand-wavy.
 
 ## Canonical profiles
 
-Source of truth for defaults: `bdsim/config.py` (`ProcessFaults`). **Bare `ProcessFaults()` is not the legacy fingerprint path.**
+Source of truth for defaults: `bdsim/config.py` (`ProcessFaults`). As
+of **bdsim 1.2.0**, the runtime default enables Layers 2.5 + 2.1 + 2.4
+(both) + 2.8a — it is **its own pinned profile**, not the legacy path.
 
 | Profile | How to get it | `sv` width | Role |
 |---------|---------------|------------|------|
-| **Runtime default** | `ProcessFaults()` | **22** | Layer 2.5 on (`fouling_dynamic=True`); other Layer masters off/zero. What `run()` / default live construction use. |
-| **Legacy fingerprint** | Explicit `fouling_dynamic=False` (+ other Layer masters off/zero) | **21** | Upstream-parity pins: batch `sv=c8807b23…`, live `sv=23c3c885…`. Tests pass this override. |
-| **Layer 2.5 fingerprint** | `fouling_dynamic=True` with other extras off | **22** | Dynamic-α pin family: batch `sv=696531c4…`. |
+| **Runtime default** (1.2.0+) | `ProcessFaults()` | **30** | Layers 2.5 + 2.1 + 2.4 (both) + 2.8a all ON. Pin: batch `sv=691cf51b…`, live `sv=80f6f046…`. What `run()` / default live construction use. |
+| **Legacy fingerprint** | Explicit `fouling_dynamic=False` (and every other Layer master off/zero) | **21** | Upstream-parity pins: batch `sv=c8807b23…`, live `sv=23c3c885…`. Tests pass these overrides. |
+| **Layer 2.5 fingerprint** | `fouling_dynamic=True` with other Layer masters off/zero | **22** | Dynamic-α pin family: batch `sv=696531c4…`. |
+| **Layer 2.5 + Layer 2.1** | `fouling_dynamic=True quality_state=True` (no Layer 2.4, no spectra) | **27** | `sv=d663e17d…`. |
 
-Other Layer gates (`quality_state`, `pump_wear`, `valve_wear`, `spectrum_enabled`, disturbance amplitudes, `live_*`, fouling-mode windows) default **off / zero / `None`** and stay that way in the profiles above unless a test enables them.
+Other Layer gates (disturbance amplitudes, `live_*` overlays,
+fouling-mode windows) default **off / zero / `None`** and stay that
+way in the profiles above unless a test enables them.
 
 > [!note]
 > Changing `fouling_dynamic`’s code default requires Joel’s agreement plus coordinated pin/docs updates. Docs here describe **current** code behavior.
 
 ## How to reproduce pins
 
-Pins match the committed [`uv.lock`](../../uv.lock) numerical stack (bdsim **1.1.1** reference: Python **3.10** → `numpy==2.2.6`, `scipy==1.15.3`, `numba==0.66.0`).
+Pins match the committed [`uv.lock`](../../uv.lock) numerical stack (bdsim **1.2.0** reference: Python **3.10** → `numpy==2.2.6`, `scipy==1.15.3`, `numba==0.66.0`).
 
 ```bash
 uv sync --extra test

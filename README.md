@@ -5,7 +5,7 @@ A Python port of the BDSIM MATLAB/Octave simulator by Natércia C. P. Fernandes
 (filter → reactor → heat exchanger → decanter → washer → dryer) with sensors,
 PID controllers, valve stiction, and a decanter split neural network.
 
-**Current version: 1.1.1** (`bdsim/__init__.py:__version__`, mirrored in `pyproject.toml`). See [`CHANGELOG.md`](CHANGELOG.md). A fingerprint bump always requires a version bump — see `AGENTS.md` for the rule.
+**Current version: 1.2.0** (`bdsim/__init__.py:__version__`, mirrored in `pyproject.toml`). See [`CHANGELOG.md`](CHANGELOG.md). A fingerprint bump always requires a version bump — see `AGENTS.md` for the rule. As of 1.2.0, the runtime default (`ProcessFaults()`) enables Layers 2.5 + 2.1 + 2.4 (both) + 2.8a — `sv` width 30. The legacy 21-wide and Layer 2.5 22-wide profiles remain canonical but require explicit `False` overrides.
 
 The port is faithful to the MATLAB semantics and uses modern Python idioms:
 
@@ -75,7 +75,7 @@ res = run_with(
 )
 ```
 
-`ProcessFaults()` is the **runtime default** (Layer 2.5 on). The **legacy fingerprint** suite uses an explicit `fouling_dynamic=False` profile — see [`docs/00-orientation/Byte-identical-contract.md`](docs/00-orientation/Byte-identical-contract.md) and [`AGENTS.md`](AGENTS.md).
+`ProcessFaults()` is the **runtime default** — as of 1.2.0 it enables Layers 2.5 + 2.1 + 2.4 (pump + valve wear) + 2.8a. The **legacy fingerprint** suite uses an explicit all-False profile, and the **Layer 2.5** suite uses `fouling_dynamic=True` with everything else `False` — see [`docs/00-orientation/Byte-identical-contract.md`](docs/00-orientation/Byte-identical-contract.md) and [`AGENTS.md`](AGENTS.md).
 
 ## Files
 

@@ -49,7 +49,14 @@ def test_run_to_completion_matches_run_with_byte_for_byte() -> None:
     """
     from bdsim.config import ProcessFaults
     settings = _make_short_settings()
-    pfaults = ProcessFaults(fouling_dynamic=False)
+    # Legacy profile (21-component state, no Layer 2.1 / 2.4 / 2.8a).
+    pfaults = ProcessFaults(
+        fouling_dynamic=False,
+        quality_state=False,
+        pump_wear=False,
+        valve_wear=False,
+        spectrum_enabled=False,
+    )
 
     res_batch = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
     sim = LiveSimulator(settings=settings, pfaults=pfaults, seed=42)
@@ -79,7 +86,14 @@ def test_run_with_long_horizon_matches_live() -> None:
     fingerprint hashes. Exercises the **legacy** HEX fouling path.
     """
     from bdsim.config import ProcessFaults
-    pfaults = ProcessFaults(fouling_dynamic=False)
+    # Legacy profile (21-component state, no Layer 2.1 / 2.4 / 2.8a).
+    pfaults = ProcessFaults(
+        fouling_dynamic=False,
+        quality_state=False,
+        pump_wear=False,
+        valve_wear=False,
+        spectrum_enabled=False,
+    )
     res_batch = run_with(pfaults=pfaults, seed=42, verbose=False)
     sim = LiveSimulator(pfaults=pfaults, seed=42)
     res_live = sim.run_to_completion(verbose=False)
@@ -102,7 +116,17 @@ def test_fingerprint_hashes_match_baseline() -> None:
     import hashlib
 
     from bdsim.config import ProcessFaults
-    pfaults = ProcessFaults(fouling_dynamic=False)
+    # Legacy profile: explicit overrides for every Layer master now
+    # default-ON (1.2.0+). Without these, this test would run with
+    # Layer 2.1 + Layer 2.4 + Layer 2.8a on, which is not the legacy
+    # 21-component trajectory.
+    pfaults = ProcessFaults(
+        fouling_dynamic=False,
+        quality_state=False,
+        pump_wear=False,
+        valve_wear=False,
+        spectrum_enabled=False,
+    )
     res_batch = run_with(pfaults=pfaults, seed=42, verbose=False)
     expected = {
         "sv": "c8807b23b14a9ad1",
@@ -129,7 +153,16 @@ def test_fingerprint_hashes_dynamic_mode() -> None:
     import hashlib
 
     from bdsim.config import ProcessFaults
-    pfaults = ProcessFaults(fouling_dynamic=True)
+    # Layer 2.5-only profile: explicit overrides for every other Layer
+    # master (1.2.0+ defaults would otherwise turn on Layers 2.1, 2.4,
+    # and 2.8a, breaking this pin's intended 22-component trajectory).
+    pfaults = ProcessFaults(
+        fouling_dynamic=True,
+        quality_state=False,
+        pump_wear=False,
+        valve_wear=False,
+        spectrum_enabled=False,
+    )
     res = run_with(pfaults=pfaults, seed=42, verbose=False)
     expected = {
         "sv": "696531c4990c5b1e",
@@ -153,6 +186,9 @@ def test_fingerprint_hashes_dynamic_mode() -> None:
 
 def test_step_returns_step_result_with_correct_shapes() -> None:
     settings = _make_short_settings()
+    # Bare ProcessFaults() now enables Layers 2.1, 2.4 (pump + valve),
+    # and 2.8a; the resulting sv width is 21 + 1 (Layer 2.5) + 6
+    # (Layer 2.1) + 1 (pump) + 1 (valve) = 30.
     sim = LiveSimulator(settings=settings, seed=42)
 
     first = sim.step()
@@ -160,7 +196,7 @@ def test_step_returns_step_result_with_correct_shapes() -> None:
     assert first.t == pytest.approx(0.0)
     assert first.pv.shape == (sim.sensor_faults.nsensors,)
     assert first.uv.shape == (6,)
-    assert first.sv.shape == (22,)
+    assert first.sv.shape == (30,)
     assert first.sp.shape == (4,)
     assert first.quality == {k: "good" for k in range(sim.sensor_faults.nsensors)}
 
@@ -239,7 +275,15 @@ def test_trigger_cleaning_dynamic_mode_snaps_alpha_to_alpha_clean() -> None:
     """
     from bdsim.config import ProcessFaults
     settings = _make_short_settings()
-    pfaults = ProcessFaults(fouling_dynamic=True)
+    # Layer 2.5-only (22-component state). Explicit overrides for the
+    # other Layer masters so the 22-wide assertion below still holds
+    # under the 1.2.0+ broader defaults.
+    pfaults = ProcessFaults(
+        fouling_dynamic=True,
+        quality_state=False,
+        pump_wear=False,
+        valve_wear=False,
+    )
     sim = LiveSimulator(settings=settings, pfaults=pfaults, seed=42)
     sim.step()
     # State vector must be 22 wide in dynamic mode.
@@ -263,10 +307,18 @@ def test_trigger_cleaning_dynamic_mode_snaps_alpha_to_alpha_clean() -> None:
 
 
 def test_trigger_cleaning_legacy_mode_skips_alpha() -> None:
-    """Legacy 21-component simulators must still support pore-radius resets."""
+    """Legacy 21-wide state has no α slot; cleaning only resets pore radius."""
     from bdsim.config import ProcessFaults
     settings = _make_short_settings()
-    pfaults = ProcessFaults(fouling_dynamic=False)
+    # Legacy 21-component state. Explicit overrides for the other Layer
+    # masters so the 21-wide assertion below still holds under the
+    # 1.2.0+ broader defaults.
+    pfaults = ProcessFaults(
+        fouling_dynamic=False,
+        quality_state=False,
+        pump_wear=False,
+        valve_wear=False,
+    )
     sim = LiveSimulator(settings=settings, pfaults=pfaults, seed=42)
     sim.step()
     assert sim._sv.shape[1] == 21

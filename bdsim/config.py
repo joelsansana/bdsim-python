@@ -181,9 +181,11 @@ class ProcessFaults:
     ratio_robs_r: float = 0.9
     fouling: int = 1                                           # 0 off, 1 on
     foulingpar: np.ndarray = field(default_factory=lambda: np.array([3e-7]))
-    fouling_dynamic: bool = True                              # Layer 2.5: α evolves as a state when True
+    fouling_dynamic: bool = True                              # Layer 2.5: α evolves as a state when True.
                                                               # When False, behaviour matches the legacy
                                                               # pre-baked series (factor = 1/(1 + Rf)).
+                                                              # Default ON since 1.0; bare ProcessFaults() is
+                                                              # NOT the legacy fingerprint profile.
 
     # ---- Layer 2.1: quality state + feedstock quality -------------------
     # When quality_state=True, sv0 grows by 6 components:
@@ -200,9 +202,9 @@ class ProcessFaults:
     # quality_lag_mode = "lab" → 15-min default lab cycle.
     # quality_lag_mode = "online" → 60-s NIR cycle (online analyser).
     # quality_state=False preserves the upstream 21-component state.
-    quality_state: bool = False                              # Layer 2.1 master switch. Default off to keep
-                                                              # backward-compat with existing callers; demos
-                                                              # enable it explicitly via ProcessFaults(quality_state=True).
+    quality_state: bool = True                               # Layer 2.1 master switch. Default ON as of 1.2.0:
+                                                              # demos that want the legacy pre-2.1 fingerprint must
+                                                              # pass quality_state=False explicitly.
     quality_lag_mode: str = "lab"
     lab_cycle_s: float = 15.0 * 60.0                           # 15 minutes default
     online_cycle_s: float = 60.0                                # 1 minute for NIR
@@ -293,8 +295,12 @@ class ProcessFaults:
     # works as an instantaneous deadband injection; Layer 2.4
     # models the slow build-up of that stiction.
     # ------------------------------------------------------------------
-    pump_wear: bool = False                                    # Layer 2.4: pump degradation state (sv[22])
-    valve_wear: bool = False                                   # Layer 2.4: valve stiction state (sv[23])
+    pump_wear: bool = True                                     # Layer 2.4: pump degradation state (sv[22]).
+                                                               # Default ON as of 1.2.0 — pass pump_wear=False
+                                                               # explicitly for the legacy fingerprint profile.
+    valve_wear: bool = True                                    # Layer 2.4: valve stiction state (sv[23]).
+                                                               # Default ON as of 1.2.0 — pass valve_wear=False
+                                                               # explicitly for the legacy fingerprint profile.
 
     # Initial values for the continuous-state slots. The driver
     # writes these into sv[22] / sv[23] at construction time.
@@ -316,13 +322,17 @@ class ProcessFaults:
 
     # ------------------------------------------------------------------
     # Layer 2.8: NIR/IR virtual spectrum sensor (port of upstream
-    # ``comp_spectrum.m``). Master switch defaults to ``False`` so
-    # the legacy 21/22-component state fingerprint is preserved.
-    # When enabled, the spectrum generator fires every
-    # ``spctr_t`` seconds and attaches a ``SpectrumSample`` to
-    # ``StepResult.spectra`` at those times (None between fires).
+    # ``comp_spectrum.m``). Master switch is ON by default as of
+    # 1.2.0 — the spectrum is post-process only (does NOT perturb
+    # the ODE state vector), so the trajectory fingerprint is
+    # unaffected; only ``StepResult.spectra`` is populated at fire
+    # times. Pass ``spectrum_enabled=False`` to skip it entirely.
+    # The generator fires every ``spctr_t`` seconds and attaches a
+    # ``SpectrumSample`` to ``StepResult.spectra`` at those times
+    # (None between fires).
     # ------------------------------------------------------------------
-    spectrum_enabled: bool = False
+    spectrum_enabled: bool = True                              # Default ON as of 1.2.0 — set False to skip the
+                                                               # Layer 2.8 NIR/IR virtual sensor entirely.
     spctr_t: float = 3600.0                                     # spectrum sampling period (s), default 1 h
     spctr_cs: int = 2                                           # Skoog photometric noise: 0..3
     spctr_snr_db: float = 30.0                                  # additive white Gaussian noise SNR

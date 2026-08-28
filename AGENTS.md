@@ -63,18 +63,18 @@ NOTES.md                # historical: upstream-faithful bugs we found and fixed
 ## Build conventions
 
 - **Numba kernels are sacred.** Don't refactor for readability if it costs a fingerprint pin update. The ODE RHS, reaction kinetics, valve stiction, PID step, ARMAX noise update, sensor measurements, and AE model are all `@njit(cache=True)`. The 72h default sim runs in ~60s on a single core.
-- **Default profiles (read carefully).** New Layer flags should default **off / zero**, except documented exceptions. Today `ProcessFaults.fouling_dynamic` defaults to **`True`** (Layer 2.5 on → `sv` width 22). Bare `ProcessFaults()` is **not** the upstream legacy pin path.
+- **Default profiles (read carefully).** As of 1.2.0, the four major Layer master switches default to **`True`** (Layer 2.5 fouling, 2.1 quality latching, 2.4 pump wear, 2.4 valve wear, 2.8a spectra). Bare `ProcessFaults()` enables all of them → `sv` width 30, hash `691cf51b…`. Tests and demos that need a narrower state vector must pass the relevant `quality_state=False` / `pump_wear=False` / `valve_wear=False` / `spectrum_enabled=False` overrides explicitly. The legacy / Layer-2.5-only profiles below remain canonical — they are the byte-identical contracts to the upstream MATLAB baseline and the 1.0 Layer-2.5 release.
 
   | Profile | Construction | `sv` width | Pins (full SHA-256[:16]) |
   |--------|--------------|-------------|----------------------------|
-  | Runtime default | `ProcessFaults()` | 22 | Layer 2.5 path; **not** the legacy hash (no pinned family) |
-  | Legacy fingerprint | `fouling_dynamic=False`, `quality_state=False`, all masters off | 21 | batch `sv=c8807b23…` `pv=77def506…` `uv=17e62051…`; live `sv=23c3c885…` |
+  | Runtime default (1.2.0+) | `ProcessFaults()` | **30** | batch `sv=691cf51b…` `pv=baedc29f…` `uv=4e4134e4…`; live `sv=80f6f046…` |
+  | Legacy fingerprint | `fouling_dynamic=False`, all masters off | 21 | batch `sv=c8807b23…` `pv=77def506…` `uv=17e62051…`; live `sv=23c3c885…` |
   | Layer 2.5 fingerprint | `fouling_dynamic=True`, all other masters off | 22 | batch `sv=696531c4…` `pv=3c96ca4f…` `uv=0d9a9673…` |
-  | Layer 2.5 + Layer 2.1 | `fouling_dynamic=True`, `quality_state=True` | 28 | (Layer 2.1 review pending — see Open Questions in `Progress.md`) |
-  | Layer 2.4 pump-only | `pump_wear=True`, `valve_wear=False`, `fouling_dynamic=True` | 23 | batch `sv=7ddd7aaa…` `pv=e0dba881…` `uv=86c2704f…` |
-  | Layer 2.4 valve-only | `pump_wear=False`, `valve_wear=True`, `fouling_dynamic=True` | 23 | batch `sv=9425d007…` `pv=02296ffa…` `uv=aa146ea3…` |
-  | Layer 2.4 both | `pump_wear=True`, `valve_wear=True`, `fouling_dynamic=True` | 24 | batch `sv=c092fe08…` `pv=2d26f03f…` `uv=4ef50b9f…` |
-  | Layer 2.6 active | `fouling_dynamic=True`, `ambient_t_amplitude_k` etc. > 0 | 22 | batch `sv=8865a8c3…`; live `sv=bb763a9b…` |
+  | Layer 2.5 + Layer 2.1 | `fouling_dynamic=True`, `quality_state=True` (no Layer 2.4, no spectra) | 27 | batch `sv=d663e17d…` (Layer 2.1 review pending — see Open Questions in `Progress.md`) |
+  | Layer 2.4 pump-only | `pump_wear=True`, `valve_wear=False`, `fouling_dynamic=True`, `quality_state=False` | 23 | batch `sv=7ddd7aaa…` `pv=e0dba881…` `uv=86c2704f…` |
+  | Layer 2.4 valve-only | `pump_wear=False`, `valve_wear=True`, `fouling_dynamic=True`, `quality_state=False` | 23 | batch `sv=9425d007…` `pv=02296ffa…` `uv=aa146ea3…` |
+  | Layer 2.4 both | `pump_wear=True`, `valve_wear=True`, `fouling_dynamic=True`, `quality_state=False` | 24 | batch `sv=c092fe08…` `pv=2d26f03f…` `uv=4ef50b9f…` |
+  | Layer 2.6 active | `fouling_dynamic=True`, `ambient_t_amplitude_k` etc. > 0 (all other masters off) | 22 | batch `sv=8865a8c3…`; live `sv=bb763a9b…` |
   | Layer 2.6b live | `LiveSimulator` cw_pump_trip mid-run override | 22 | live `sv` matches Layer 2.6 baseline; trip is a single row-removal event |
 
   Full write-up: `docs/00-orientation/Byte-identical-contract.md`.

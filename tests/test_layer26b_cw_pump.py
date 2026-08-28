@@ -61,7 +61,13 @@ def _make_sim_with_trip(
     """Build a LiveSimulator with a cw_pump_trip override configured."""
     sim = LiveSimulator(
         settings=Settings(),
-        pfaults=ProcessFaults(fouling_dynamic=False, quality_state=False),
+        pfaults=ProcessFaults(
+            fouling_dynamic=False,
+            quality_state=False,
+            pump_wear=False,
+            valve_wear=False,
+            spectrum_enabled=False,
+        ),
     )
     sim._disturbance_override = {
         "channel": "pcw",
@@ -76,7 +82,13 @@ def _make_sim_with_trip(
 def test_envelope_returns_baseline_when_no_override() -> None:
     sim = LiveSimulator(
         settings=Settings(),
-        pfaults=ProcessFaults(fouling_dynamic=False, quality_state=False),
+        pfaults=ProcessFaults(
+            fouling_dynamic=False,
+            quality_state=False,
+            pump_wear=False,
+            valve_wear=False,
+            spectrum_enabled=False,
+        ),
     )
     assert sim._apply_disturbance_override(50.0, 4.0e5) == 4.0e5
 
@@ -166,6 +178,9 @@ def test_cw_pump_trip_drops_pcw_published_value() -> None:
     pf = ProcessFaults(
         fouling_dynamic=False,
         quality_state=False,
+        pump_wear=False,
+        valve_wear=False,
+        spectrum_enabled=False,
         ambient_t_amplitude_k=2.0,                              # nonzero so kernel runs
         cw_t_amplitude_k=1.0,
         cw_p_drift_pa_per_h=0.0,
@@ -229,7 +244,13 @@ def test_legacy_fingerprint_preserved_when_no_trip() -> None:
     ``sv=23c3c885``. Both are pinned and must remain stable.
     """
     settings = Settings(ti=0.0, tf=14400.0, dt=10.0)
-    pf = ProcessFaults(fouling_dynamic=False, quality_state=False)
+    pf = ProcessFaults(
+        fouling_dynamic=False,
+        quality_state=False,
+        pump_wear=False,
+        valve_wear=False,
+        spectrum_enabled=False,
+    )
     sim = LiveSimulator(settings=settings, pfaults=pf, seed=42)
     while not sim.done:
         sim.step()
@@ -255,6 +276,9 @@ def test_legacy_fingerprint_preserved_with_amplitudes_but_no_trip() -> None:
     pf = ProcessFaults(
         fouling_dynamic=False,
         quality_state=False,
+        pump_wear=False,
+        valve_wear=False,
+        spectrum_enabled=False,
         ambient_t_amplitude_k=8.0,
         cw_t_amplitude_k=4.0,
         cw_p_drift_pa_per_h=-100.0,

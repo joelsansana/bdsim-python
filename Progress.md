@@ -1,7 +1,7 @@
 # Audit Cleanup — Progress Log
 
 **Branch:** `chore/audit-cleanup-1.1.x`
-**Status:** Ready for review
+**Status:** 1.2.0 runtime-default expansion (in progress)
 **Last updated:** 2026-08-27
 
 ## Goal
@@ -117,6 +117,54 @@ Out of scope (deferred to follow-up PRs):
 
 ### Workstream E — CI (only E3 in this PR; E1/E2 deferred)
 - [x] E3 — Add `.github/workflows/ci.yml` (pytest matrix 3.10–3.12 + ruff).
+
+## Subsequent work — 1.2.0 broad-defaults expansion (in progress)
+
+User asked for fouling, quality measurements, spectra, and valve
+degradation to be **on by default**. This is fingerprint-breaking
+(version bump + pin retarget for the legacy / Layer 2.5 / Layer 2.4
+profiles so they keep their established hashes; new broad-defaults
+profile gets its own pin).
+
+### Changes
+
+- `ProcessFaults` defaults flipped ON: `quality_state`, `pump_wear`,
+  `valve_wear`, `spectrum_enabled` (fouling_dynamic was already ON).
+- `_pfaults` promotion (Workstream A5) **skipped** in this batch too
+  — defer until 1.2.0 broad-defaults settles.
+- Version bumped: `pyproject.toml` + `bdsim/__init__.py` →
+  `1.2.0`. bdsim-dashboard does not currently pin bdsim (see `ADMIN.md`
+  — Versioning).
+- Pre-existing off-by-one in `bdsim/ode.py` RHS `dsvdt` sizing
+  (Layer 2.1 + Layer 2.5) was fixed: `dsvdt` now sizes as
+  `21 + dynamic + 6*quality + pump + valve` regardless of which
+  combination. Closes a latent crash window. Trajectory is unchanged
+  for the common cases.
+- Tests pinned to the legacy 21-component / Layer 2.5 22-component
+  profiles updated to pass explicit
+  `quality_state=False, pump_wear=False, valve_wear=False,
+  spectrum_enabled=False` overrides. Their SHA-256 pins are
+  unchanged from 1.1.1 (`c8807b23…` / `696531c4…` / `8865a8c3…` /
+  `bb763a9b…` / `23c3c885…`).
+- New pinned profile: bare `ProcessFaults()` (1.2.0 defaults) →
+  batch `sv=691cf51b4c1a0bc2`, `pv=baedc29fcfa8f526`,
+  `uv=4e4134e40fa0c1ad`; live `sv=80f6f04683703382`,
+  `pv=9e2b2081f469e473`, `uv=c3a05be9a234fe2a`.
+- New pinned profile: Layer 2.5 + Layer 2.1 (no Layer 2.4, no
+  spectra) → batch `sv=d663e17d687b1133`.
+- All affected `bdsim/` defaults updated and `docs/`,
+  `AGENTS.md`, `ADMIN.md`, `USER.md`, `CHANGELOG.md` updated.
+  `tests/test_smoke.py::test_step_returns_step_result_with_correct_shapes`
+  bumped from `sv.shape == (22,)` to `(30,)` to match the new broad
+  default.
+
+### Pre-existing dependency drift (unchanged)
+
+The pinned-test failures on this box (`6f61eb53…` vs
+`c8807b23…`, etc.) are the **pre-1.1.1** hashes from a newer
+`uv.lock` stack (numpy 2.4.6 / scipy 1.18.0 on this box vs the 1.1.1
+reference numpy 2.2.6 / scipy 1.15.3). Same drift on `main` HEAD.
+Not caused by this work — separate issue.
 
 ### Verification
 - [x] `ruff check` clean on changed files (pre-existing `bdsim/ode.py` E702/F841 are out of scope per AGENTS.md).

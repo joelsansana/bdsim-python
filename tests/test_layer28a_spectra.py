@@ -226,7 +226,14 @@ def test_generator_heavy_phase_uses_three_species():
 def test_step_result_spectra_none_when_disabled():
     """With spectrum_enabled=False, every step's spectra is None."""
     from bdsim.config import Settings
-    sim = LiveSimulator(settings=Settings(tf=60.0, dt=1.0), seed=42)
+    # spectrum_enabled is default-ON as of 1.2.0; explicitly disable
+    # so this test's "every step's spectra is None" assertion still
+    # holds.
+    sim = LiveSimulator(
+        settings=Settings(tf=60.0, dt=1.0),
+        pfaults=ProcessFaults(spectrum_enabled=False),
+        seed=42,
+    )
     while not sim.done:
         row = sim.step()
         assert row.spectra is None
@@ -261,7 +268,13 @@ def test_spectrum_enabled_preserves_legacy_fingerprint():
     from bdsim.config import Settings
     s = Settings(tf=3600.0, dt=1.0)
 
-    sim_off = LiveSimulator(settings=s, seed=42)
+    # spectrum_enabled is default-ON as of 1.2.0; explicitly disable
+    # on the "off" sim so this test still exercises the comparison.
+    sim_off = LiveSimulator(
+        settings=s,
+        pfaults=ProcessFaults(spectrum_enabled=False),
+        seed=42,
+    )
     while not sim_off.done:
         sim_off.step()
 
