@@ -11,16 +11,25 @@ Truncated SHA-256 (16 hex) over a trajectory array — a **regression ID**, not 
 
 ## Where pins live
 
-Primarily `tests/test_smoke.py`, `tests/test_live_simulator.py`, and Layer-specific tests. Profile names match [[Byte-identical-contract#Canonical profiles]]:
+`tests/test_live_simulator.py` and the per-Layer test files pin SHA-256
+fingerprints over the full trajectory. `tests/test_smoke.py` checks
+shapes, physical ranges, and determinism only — no SHA pins. Profile
+names match [[Byte-identical-contract#Canonical profiles]]:
 
-| Canonical profile | How tests build it | Example pin family |
-|-------------------|--------------------|--------------------|
-| Legacy fingerprint (batch) | `fouling_dynamic=False` etc. | `sv=c8807b23…` |
-| Legacy fingerprint (live) | matching legacy knobs | `sv=23c3c885…` |
-| Layer 2.5 fingerprint (batch) | `fouling_dynamic=True`, extras off | `sv=696531c4…` |
-| Layer 2.6 batch / live | disturbance amplitudes on | `8865a8c3…` / `bb763a9b…` |
+| Profile | Construction | `sv` width | Pin family (full SHA-256[:16]) |
+|---------|--------------|-------------|--------------------------------|
+| Runtime default (1.2.0+) | `ProcessFaults()` | 30 | batch `sv=691cf51b…` `pv=baedc29f…` `uv=4e4134e4…`; live `sv=80f6f046…` |
+| Legacy fingerprint (batch) | `fouling_dynamic=False`, all masters off | 21 | `sv=c8807b23…` `pv=77def506…` `uv=17e62051…` |
+| Legacy fingerprint (live) | matching legacy knobs | 21 | `sv=23c3c885…` |
+| Layer 2.5 fingerprint (batch) | `fouling_dynamic=True`, all other masters off | 22 | `sv=696531c4…` `pv=3c96ca4f…` `uv=0d9a9673…` |
+| Layer 2.5 + Layer 2.1 (batch) | `fouling_dynamic=True`, `quality_state=True` (no Layer 2.4, no spectra) | 27 | `sv=d663e17d…` |
+| Layer 2.4 pump-only (batch) | `pump_wear=True`, `valve_wear=False`, `fouling_dynamic=True`, `quality_state=False` | 23 | `sv=7ddd7aaa…` `pv=e0dba881…` `uv=86c2704f…` |
+| Layer 2.4 valve-only (batch) | `pump_wear=False`, `valve_wear=True`, `fouling_dynamic=True`, `quality_state=False` | 23 | `sv=9425d007…` `pv=02296ffa…` `uv=aa146ea3…` |
+| Layer 2.4 both (batch) | `pump_wear=True`, `valve_wear=True`, `fouling_dynamic=True`, `quality_state=False` | 24 | `sv=c092fe08…` `pv=2d26f03f…` `uv=4ef50b9f…` |
+| Layer 2.6 active (batch) | `fouling_dynamic=True`, amplitudes > 0 (all other masters off) | 22 | `sv=8865a8c3…` |
+| Layer 2.6 active (live) | matching knobs | 22 | `sv=bb763a9b…` |
 
-(Exact strings are in the tests — always trust the test file over this note if they diverge.) Bare `ProcessFaults()` is the **runtime default**, not the legacy pin row.
+(Exact strings are in the tests — always trust the test file over this note if they diverge.) Bare `ProcessFaults()` is the **runtime default** as of 1.2.0 — it's a new pinned profile (`sv=691cf51b…`), not the legacy pin row.
 
 ## Running tests
 

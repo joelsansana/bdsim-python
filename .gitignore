@@ -45,8 +45,8 @@ results/*.html
 results/*.png
 !results/.gitkeep
 
-Fernandes2019_BDSIM.pdf
-manual.pdf
+docs/Fernandes2019_BDSIM.pdf
+docs/manual.pdf
 
 # Cursor
 .cursor/

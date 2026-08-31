@@ -37,7 +37,6 @@ must stay byte-identical. The regression test for that contract lives at
 
 from __future__ import annotations
 
-import logging
 import time
 from typing import Any
 
@@ -66,9 +65,7 @@ from .simulation import (
     _PIDState,
     _stiction_step,
 )
-from .fouling_modes import FoulingMode, FoulingModeStepper, factor_for_window
-
-logger = logging.getLogger(__name__)
+from .fouling_modes import FoulingMode, FoulingModeStepper
 
 
 class LiveSimulator:
@@ -1107,8 +1104,7 @@ class LiveSimulator:
             # Falls back to 0.0 if the state slot is unavailable
             # (e.g. legacy 21-component state with quality_state=False).
             xrg = float(self._sv[i - 1, 5]) if self._sv.shape[1] > 5 else 0.0
-            factor_windowed, _ = factor_for_window(
-                stepper=self._fouling_stepper,
+            factor_windowed, _ = self._fouling_stepper.step(
                 t=t_now,
                 mode=int(pfaults.fouling_mode_active_mode),
                 xRG=xrg,
@@ -1171,7 +1167,7 @@ class LiveSimulator:
             self._sv[i, 25] = float(np.clip(self._sv[i, 25], 0.0, 0.5))
             self._sv[i, 26] = float(np.clip(self._sv[i, 26], 0.0, 0.5))
             self._sv[i, 27] = float(np.clip(self._sv[i, 27], 0.0, 200.0))
-            if (self._t[i] - self._last_lab_sample_t) >= self._lab_period_s or i == 0:
+            if (self._t[i] - self._last_lab_sample_t) >= self._lab_period_s:
                 self._quality_latched[i, 0] = self._sv[i, 22] + self._pfaults.lab_noise_fame * np.random.randn()
                 self._quality_latched[i, 1] = self._sv[i, 23] + self._pfaults.lab_noise_water * np.random.randn()
                 self._quality_latched[i, 2] = self._sv[i, 24] + self._pfaults.lab_noise_iv * np.random.randn()

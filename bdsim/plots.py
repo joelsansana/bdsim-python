@@ -355,7 +355,10 @@ def _save_index(figures: list[tuple[str, go.Figure]], path: Path) -> None:
     for name, fig in figures:
         parts.append('<div class="fig">')
         parts.append(f"<h2>{name}</h2>")
-        # include_plotlyjs='inline' avoids the CDN dependency for offline viewing
+        # include_plotlyjs='cdn' keeps the index page small; the per-figure
+        # standalone HTML files (write_html above) also use the CDN, so the
+        # page renders correctly whenever plotly.js is reachable. For fully
+        # offline viewing, set include_plotlyjs='inline' on both call sites.
         parts.append(fig.to_html(include_plotlyjs="cdn", full_html=False))
         parts.append("</div>")
     parts.append("</body></html>")

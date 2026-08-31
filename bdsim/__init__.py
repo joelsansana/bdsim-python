@@ -55,7 +55,7 @@ from .spectra import (
 from .simulation import run, run_with
 from .live_simulator import LiveSimulator
 
-__version__ = "1.1.1"
+__version__ = "1.2.0"
 __all__ = [
     "Parameters",
     "ProcessFaults",

@@ -8,8 +8,14 @@ so that ``run()`` reproduces the upstream trajectory to within solver tolerance.
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
 import numpy as np
+
+if TYPE_CHECKING:
+    from .spectra import SpectrumSample
 
 
 # -----------------------------------------------------------------------------
@@ -84,8 +90,6 @@ class Parameters:
     # Derived: filled by :meth:`finalize`
     vmol: np.ndarray | None = None
     cpmolm: float = 0.0                                        # populated by finalize
-    vmolo_local: float = 0.0
-    cpmolo_local: float = 0.0
 
     # Filter constants — populated from process faults at startup
     K1F: float = 0.0
@@ -139,9 +143,6 @@ class Parameters:
     def finalize(self) -> None:
         """Recompute derived quantities that depend on M and ro."""
         self.vmol = self.M / self.ro
-        self.vmolo_local = self.vmolo
-        self.cpmolo_local = self.cpmolo
-        self.cpmolm = self.cpmolm
 
     def apply_layer24_overrides(self, pfaults: ProcessFaults) -> None:
         """Apply Layer 2.4 kinetics overrides from ``pfaults``.
@@ -180,9 +181,11 @@ class ProcessFaults:
     ratio_robs_r: float = 0.9
     fouling: int = 1                                           # 0 off, 1 on
     foulingpar: np.ndarray = field(default_factory=lambda: np.array([3e-7]))
-    fouling_dynamic: bool = True                              # Layer 2.5: α evolves as a state when True
+    fouling_dynamic: bool = True                              # Layer 2.5: α evolves as a state when True.
                                                               # When False, behaviour matches the legacy
                                                               # pre-baked series (factor = 1/(1 + Rf)).
+                                                              # Default ON since 1.0; bare ProcessFaults() is
+                                                              # NOT the legacy fingerprint profile.
 
     # ---- Layer 2.1: quality state + feedstock quality -------------------
     # When quality_state=True, sv0 grows by 6 components:
@@ -199,9 +202,9 @@ class ProcessFaults:
     # quality_lag_mode = "lab" → 15-min default lab cycle.
     # quality_lag_mode = "online" → 60-s NIR cycle (online analyser).
     # quality_state=False preserves the upstream 21-component state.
-    quality_state: bool = False                              # Layer 2.1 master switch. Default off to keep
-                                                              # backward-compat with existing callers; demos
-                                                              # enable it explicitly via ProcessFaults(quality_state=True).
+    quality_state: bool = True                               # Layer 2.1 master switch. Default ON as of 1.2.0:
+                                                              # demos that want the legacy pre-2.1 fingerprint must
+                                                              # pass quality_state=False explicitly.
     quality_lag_mode: str = "lab"
     lab_cycle_s: float = 15.0 * 60.0                           # 15 minutes default
     online_cycle_s: float = 60.0                                # 1 minute for NIR
@@ -292,8 +295,12 @@ class ProcessFaults:
     # works as an instantaneous deadband injection; Layer 2.4
     # models the slow build-up of that stiction.
     # ------------------------------------------------------------------
-    pump_wear: bool = False                                    # Layer 2.4: pump degradation state (sv[22])
-    valve_wear: bool = False                                   # Layer 2.4: valve stiction state (sv[23])
+    pump_wear: bool = True                                     # Layer 2.4: pump degradation state (sv[22]).
+                                                               # Default ON as of 1.2.0 — pass pump_wear=False
+                                                               # explicitly for the legacy fingerprint profile.
+    valve_wear: bool = True                                    # Layer 2.4: valve stiction state (sv[23]).
+                                                               # Default ON as of 1.2.0 — pass valve_wear=False
+                                                               # explicitly for the legacy fingerprint profile.
 
     # Initial values for the continuous-state slots. The driver
     # writes these into sv[22] / sv[23] at construction time.
@@ -315,13 +322,17 @@ class ProcessFaults:
 
     # ------------------------------------------------------------------
     # Layer 2.8: NIR/IR virtual spectrum sensor (port of upstream
-    # ``comp_spectrum.m``). Master switch defaults to ``False`` so
-    # the legacy 21/22-component state fingerprint is preserved.
-    # When enabled, the spectrum generator fires every
-    # ``spctr_t`` seconds and attaches a ``SpectrumSample`` to
-    # ``StepResult.spectra`` at those times (None between fires).
+    # ``comp_spectrum.m``). Master switch is ON by default as of
+    # 1.2.0 — the spectrum is post-process only (does NOT perturb
+    # the ODE state vector), so the trajectory fingerprint is
+    # unaffected; only ``StepResult.spectra`` is populated at fire
+    # times. Pass ``spectrum_enabled=False`` to skip it entirely.
+    # The generator fires every ``spctr_t`` seconds and attaches a
+    # ``SpectrumSample`` to ``StepResult.spectra`` at those times
+    # (None between fires).
     # ------------------------------------------------------------------
-    spectrum_enabled: bool = False
+    spectrum_enabled: bool = True                              # Default ON as of 1.2.0 — set False to skip the
+                                                               # Layer 2.8 NIR/IR virtual sensor entirely.
     spctr_t: float = 3600.0                                     # spectrum sampling period (s), default 1 h
     spctr_cs: int = 2                                           # Skoog photometric noise: 0..3
     spctr_snr_db: float = 30.0                                  # additive white Gaussian noise SNR
@@ -633,11 +644,20 @@ class Settings:
     nic: int = 4                                              # controller update every nic steps
 
     # ------------------------------------------------------------------ #
-    # Live-mutable setpoints (Roadmap step 4). The ``LiveSimulator`` mirrors
-    # the scalar ``sp1..sp4`` into these on construction; ``POST /control``
-    # writes into them so the PID picks up the change on the next ``nic``
-    # boundary. The mirror is kept in sync — callers should not write to
-    # both.
+    # Live-mutable setpoints (Roadmap step 4). The ``LiveSimulator`` reads
+    # these on every PID tick; ``POST /control`` writes into them so the
+    # PID picks up the change on the next ``nic`` boundary.
+    #
+    # Important: ``simulation.run_with`` (the batch driver) does NOT honor
+    # ``live_sp*`` — it reads the static ``sp1..sp4`` once at setup. Mutating
+    # ``live_sp*`` only takes effect via ``LiveSimulator``. If you need a
+    # setpoint sweep in a batch run, edit ``sp1..sp4`` directly before calling
+    # ``run_with`` (or use the pre-baked ``sp[:, 3] += 100.0 * heaviside(...)``
+    # style that simulation.py uses for ``sp4``).
+    #
+    # The ``__post_init__`` mirror keeps ``live_sp*`` seeded from ``sp*`` so
+    # a freshly-built ``LiveSimulator`` starts at the documented setpoints.
+    # Do not write to ``sp*`` and ``live_sp*`` separately — pick one.
     # ------------------------------------------------------------------ #
     live_sp1: float = 0.0
     live_sp2: float = 0.0
@@ -645,9 +665,6 @@ class Settings:
     live_sp4: float = 0.0
 
     def __post_init__(self) -> None:
-        # Always re-sync from the scalar defaults after dataclass init.
-        # The ``live_sp*`` fields exist so external code can mutate them
-        # at runtime; the baseline values come from ``sp1..sp4``.
         self.live_sp1 = self.sp1
         self.live_sp2 = self.sp2
         self.live_sp3 = self.sp3
@@ -690,7 +707,7 @@ class StepResult:
     disturbances: np.ndarray | None = None                  # Layer 2.6: (3,) [Tamb, Tcw, Pcw]; None when off
     xLend: np.ndarray | None = None                         # washer/dryer output, (6,)
     yLend: np.ndarray | None = None                         # dryer mass fractions, (6,)
-    spectra: object | None = None                           # Layer 2.8: SpectrumSample at fire times, else None
+    spectra: SpectrumSample | None = None                    # Layer 2.8: SpectrumSample at fire times, else None
 
 
 # -----------------------------------------------------------------------------
@@ -733,7 +750,6 @@ class Results:
 
         Returns a *new* Results object; original data is unchanged.
         """
-        import copy
         r = copy.deepcopy(self)
 
         r.uv[:, 1] -= 273.15

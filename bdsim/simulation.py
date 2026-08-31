@@ -702,7 +702,7 @@ def run_with(
             # Lab-cycle latching: at each lab boundary, sample the true
             # quality with analytical noise and hold the value until the
             # next cycle. This is the time-lag structure.
-            if (t[i] - last_lab_sample_t) >= lab_period_s or i == 0:
+            if (t[i] - last_lab_sample_t) >= lab_period_s:
                 quality_latched[i, 0] = sv[i, 22] + pfaults.lab_noise_fame * np.random.randn()
                 quality_latched[i, 1] = sv[i, 23] + pfaults.lab_noise_water * np.random.randn()
                 quality_latched[i, 2] = sv[i, 24] + pfaults.lab_noise_iv * np.random.randn()

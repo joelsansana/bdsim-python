@@ -7,4 +7,4 @@ Obsidian-style knowledge vault for juniors learning the plant and engine.
 
 ## Upstream PDFs (optional)
 
-Reference PDFs such as `Fernandes2019_BDSIM.pdf` and `manual.pdf` are **gitignored** at the repository root (see [`.gitignore`](../.gitignore)). Place local copies next to the repo if you have them; they are **not** required to install or run bdsim.
+Reference PDFs such as `Fernandes2019_BDSIM.pdf` and `manual.pdf` are **gitignored** if placed under `docs/` (see [`.gitignore`](../.gitignore)). Drop local copies into `docs/` if you have them; they are **not** required to install or run bdsim.

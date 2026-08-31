@@ -178,7 +178,15 @@ def test_default_fingerprint_unchanged_from_layer25_baseline() -> None:
     same fingerprint, regardless of which knobs are at zero.
     """
     settings = Settings()                                    # canonical: ti=0, tf=260000, dt=5
-    pfaults = ProcessFaults(fouling_dynamic=False, quality_state=False)
+    # Legacy profile: explicit overrides for every Layer master now
+    # default-ON (1.2.0+).
+    pfaults = ProcessFaults(
+        fouling_dynamic=False,
+        quality_state=False,
+        pump_wear=False,
+        valve_wear=False,
+        spectrum_enabled=False,
+    )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
     # Pinned by Layer 2.5 / Step 4 regression tests.
     assert _fingerprint(res.sv) == "c8807b23b14a9ad1", (
@@ -192,8 +200,15 @@ def test_active_disturbance_produces_new_pinned_fingerprint() -> None:
     """When disturbance knobs are non-zero, the trajectory diverges from upstream.
     Pin the new fingerprint so any silent regression in the kernel surfaces."""
     settings = Settings()                                    # canonical baseline
+    # Legacy profile (21-component state) + active Layer 2.6 knobs.
+    # Explicit overrides for every Layer master now default-ON
+    # (1.2.0+) so this pin stays a clean Layer 2.6-only trajectory.
     pfaults = ProcessFaults(
-        fouling_dynamic=False, quality_state=False,
+        fouling_dynamic=False,
+        quality_state=False,
+        pump_wear=False,
+        valve_wear=False,
+        spectrum_enabled=False,
         ambient_t_amplitude_k=8.0,
         cw_t_amplitude_k=4.0,
         cw_p_drift_pa_per_h=-100.0,
