@@ -1,0 +1,56 @@
+name: Feature request
+description: Propose a new ProcessFaults knob, a doc change, or a new feature.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing a feature. Please describe the problem you're
+        trying to solve and your proposed API. Maintainers will review.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      placeholder: |
+        What is the workflow or research question you can't address with
+        the current API? Cite the docs page if relevant.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed API
+      placeholder: |
+        Sketch the proposed field names, defaults, and where they'd live
+        in `ProcessFaults` / `Settings` / `SensorFaults` / `LiveSimulator`.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      placeholder: |
+        Did you consider a workaround with the current knobs? Why doesn't
+        it suffice?
+
+  - type: textarea
+    id: fingerprint-impact
+    attributes:
+      label: Trajectory impact
+      placeholder: |
+        Does the feature change the ODE state vector (`sv`) width, the
+        input vector (`uv`), or the published measurement vector (`pv`)?
+        Will it affect any pinned fingerprint profile?
+
+  - type: textarea
+    id: docs
+    attributes:
+      label: Docs updates needed
+      placeholder: |
+        Which docs files would need updates?
+        `docs/30-engine/Config-surface.md`,
+        `docs/40-helpers/Channel-indices.md`, etc.
