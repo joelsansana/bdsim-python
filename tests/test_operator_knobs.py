@@ -1,4 +1,4 @@
-"""Tests for Layer 2.7 operator-driven disturbance knobs.
+"""Tests for operator-driven disturbance knobs (live_* overlay fields on ProcessFaults).
 
 Verifies:
 - The four ``ProcessFaults.live_*`` fields default to ``None``
@@ -38,7 +38,7 @@ def _fingerprint(arr: np.ndarray) -> str:
 def test_live_knob_fields_default_to_none() -> None:
     """The four live_* fields default to None — overlay off by default.
 
-    Bit-identical to the Layer 2.6 baseline when no overlay is set.
+    Bit-identical to the external disturbances baseline when no overlay is set.
     """
     pfaults = ProcessFaults()
     assert pfaults.live_ambient_mean_k is None
@@ -48,10 +48,10 @@ def test_live_knob_fields_default_to_none() -> None:
 
 
 def test_zero_amplitude_with_no_overlays_is_byte_identical_to_layer25() -> None:
-    """No overlay + zero profile amplitudes → Layer 2.5/2.6 fingerprint."""
+    """No overlay + zero profile amplitudes → dynamic fouling/2.6 fingerprint."""
     settings = Settings()
     # Legacy profile (21-component state). Explicit overrides for every
-    # Layer master now default-ON (1.2.0+).
+    # feature flag now default-ON (1.2.0+).
     pfaults = ProcessFaults(
         fouling_dynamic=False,
         quality_state=False,
@@ -60,9 +60,9 @@ def test_zero_amplitude_with_no_overlays_is_byte_identical_to_layer25() -> None:
         spectrum_enabled=False,
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    # Pinned by Layer 2.5 / Step 4 regression tests (Layer 2.6 used
-    # the same fingerprint when amplitudes are zero). Layers 2.5
-    # and 2.6 share this contract; Layer 2.7 must not break it
+    # Pinned by dynamic fouling / Step 4 regression tests (external disturbances used
+    # the same fingerprint when amplitudes are zero). the dynamic-fouling fingerprint
+    # and 2.6 share this contract; operator disturbance knobs must not break it
     # when all ``live_*`` fields are None.
     assert _fingerprint(res.sv) == "c8807b23b14a9ad1"
     assert _fingerprint(res.pv) == "77def506dbfe25c9"
@@ -277,8 +277,8 @@ def test_active_ambient_overlay_pinned_fingerprint() -> None:
     canonical fingerprint horizon, where the drift term dominates).
     """
     settings = Settings(ti=0.0, tf=86400.0, dt=5.0)           # 24 h
-    # Legacy profile (21-component state) + Layer 2.7 drift overlay.
-    # Explicit overrides for every Layer master now default-ON (1.2.0+).
+    # Legacy profile (21-component state) + operator disturbance knobs drift overlay.
+    # Explicit overrides for every feature flag now default-ON (1.2.0+).
     pfaults = ProcessFaults(
         fouling_dynamic=False,
         quality_state=False,
@@ -291,7 +291,7 @@ def test_active_ambient_overlay_pinned_fingerprint() -> None:
     # Stable pins (recompute by running the same fixture and
     # checking in the new hashes — these are the contract).
     assert _fingerprint(res.sv) == "677f6817f64172ab", (
-        f"Layer 2.7 drift-overlay sv fingerprint drifted: {_fingerprint(res.sv)}"
+        f"operator disturbance knobs drift-overlay sv fingerprint drifted: {_fingerprint(res.sv)}"
     )
     assert _fingerprint(res.pv) == "6a308554964e1051"
     assert _fingerprint(res.uv) == "eb914f357f5d38c3"
@@ -301,7 +301,7 @@ def test_clear_overlay_after_use_restores_cleared_state() -> None:
     """Clearing an overlay after use reverts ``uv`` to the no-overlay trajectory."""
     settings = Settings(ti=0.0, tf=86400.0, dt=5.0)           # 24 h
     # Legacy profile (21-component state). Explicit overrides for every
-    # Layer master now default-ON (1.2.0+).
+    # feature flag now default-ON (1.2.0+).
     pfaults_used = ProcessFaults(
         fouling_dynamic=False,
         quality_state=False,
@@ -325,7 +325,7 @@ def test_clear_overlay_after_use_restores_cleared_state() -> None:
     )
     # The cleared run with all profile knobs at zero must match the
     # no-overlay 24h fingerprint (different from the canonical 72h
-    # Layer 2.5 / 2.6 hash because of horizon, not because of knobs).
+    # dynamic fouling / external disturbances hash because of horizon, not because of knobs).
     assert _fingerprint(res_cleared.sv) == "7df580fdf1adead3"
     assert _fingerprint(res_cleared.pv) == "02a434ac5ffca65a"
     assert _fingerprint(res_cleared.uv) == "b0d476a82f2c5c19"

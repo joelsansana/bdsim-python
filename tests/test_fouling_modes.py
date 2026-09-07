@@ -1,4 +1,4 @@
-"""Tests for Layer 2.8b five-mode fouling stepper (port of fouling.m).
+"""Tests for fouling-mode windows five-mode fouling stepper (port of fouling.m).
 
 Covers:
   * Modes 0–3 deterministic behaviour (off / linear / exponential /

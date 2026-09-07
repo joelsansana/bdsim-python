@@ -1,5 +1,5 @@
 """
-Tests for Layer 2.8 — NIR/IR virtual spectrum sensor.
+Tests for NIR/IR spectrum sensor — NIR/IR virtual spectrum sensor.
 
 Covers:
 - comp_spectrum() leaf-function determinism + noise scales

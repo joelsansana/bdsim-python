@@ -1,4 +1,4 @@
-"""Integration tests for Layer 2.8b LiveSimulator wiring.
+"""Integration tests for fouling-mode windows LiveSimulator wiring.
 
 These tests exercise the three-priority factor-selection path
 (continuous α > windowed mode 4/5 > static legacy) and the mutator
@@ -98,7 +98,7 @@ def test_continuous_alpha_beats_windowed_mode():
     sim = _build_sim(fouling_dynamic=True)
     sim.activate_fouling_mode_window(mode=4, duration_s=600.0, seed=11)
     # Run a few steps and observe that the kernel pulled factor from
-    # sv[21] (Layer 2.5 α) instead of the ARMAX stepper. The check
+    # sv[21] (dynamic fouling α) instead of the ARMAX stepper. The check
     # is structural: with dynamic α, the right-hand side reads sv[21]
     # which is approximately constant at the initial 0.05 across a
     # short horizon, so factor ≈ 1/(1+0.05) ≈ 0.952.
@@ -205,7 +205,7 @@ def test_windowed_mode_4_is_deterministic_with_seed():
     the ARMAX perturbations and lab noise differ. We assert that
     the fouling stepper's internal state is identical and that the
     stepper-alone trajectories match (tested separately in
-    ``test_layer28b_fouling_modes.py``). What we CAN assert is that
+    ``test_fouling_modes.py``). What we CAN assert is that
     the fouling stepper produces the same mean over many runs —
     the ARMAX is unbiased.
     """
@@ -305,7 +305,7 @@ def test_get_fouling_mode_state_reflects_active_window():
 # ---------------------------------------------------------------------------
 
 def test_no_window_default_is_byte_identical_to_legacy():
-    """Default ProcessFaults (no windowed mode) keeps the Layer 2.5
+    """Default ProcessFaults (no windowed mode) keeps the dynamic fouling
     α path active and never applies the windowed stepper.
 
     We assert that factor stays in the α range (small, slowly
@@ -333,7 +333,7 @@ def test_no_window_default_is_byte_identical_to_legacy():
         fouling_mode_default_window_s=3600.0,
     )
     factor_b = sim_b.run_to_completion().factor
-    # Both must use Layer 2.5 dynamic α → factor values stay in
+    # Both must use dynamic fouling dynamic α → factor values stay in
     # the small-α range (≤ 0.5; in practice ~0.05–0.10).
     assert np.all(factor_a < 0.5), (
         f"sim_a factor values too large for dynamic α: "
