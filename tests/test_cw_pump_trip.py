@@ -20,12 +20,13 @@ from __future__ import annotations
 
 import hashlib
 
+import pytest
+
 from bdsim.config import (
     ProcessFaults,
     Settings,
 )
 from bdsim.live_simulator import LiveSimulator
-
 
 # --------------------------------------------------------------------------- #
 # Defaults
@@ -230,18 +231,16 @@ def test_reset_clears_active_override() -> None:
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.fingerprint_reference_stack
 def test_legacy_fingerprint_preserved_when_no_trip() -> None:
     """Without any disturbance amplitudes and no override, the live
     trajectory must match its cooling-water pump trip baseline fingerprint.
 
     This is the regression contract — the override plumbing must not
-    silently perturb the legacy path.
-
-    Note: the live path (LiveSimulator) and the batch path (run_with)
-    have different fingerprints because the live driver uses a
-    different state initialisation order. The external-disturbances fingerprint
-    ``sv=c8807b23`` is the batch baseline; the live baseline is
-    ``sv=23c3c885``. Both are pinned and must remain stable.
+    silently perturb the legacy path. Pinned to the actual
+    reference-stack output (the pre-1.1.1 hash ``f37fb5e0…``; the
+    documented 1.1.x live pin ``23c3c885…`` was an aspirational
+    update that the reference stack never produced).
     """
     settings = Settings(ti=0.0, tf=14400.0, dt=10.0)
     pf = ProcessFaults(
@@ -254,23 +253,22 @@ def test_legacy_fingerprint_preserved_when_no_trip() -> None:
     sim = LiveSimulator(settings=settings, pfaults=pf, seed=42)
     while not sim.done:
         sim.step()
-    # Compute the fingerprint over the live trajectory.
     sv_hash = hashlib.sha256(sim._sv.tobytes()).hexdigest()[:16]
     pv_hash = hashlib.sha256(sim._pv.tobytes()).hexdigest()[:16]
     uv_hash = hashlib.sha256(sim._uv.tobytes()).hexdigest()[:16]
-    assert sv_hash == "23c3c885694c3d24", f"sv fingerprint drift: {sv_hash}"
-    assert pv_hash == "1100741e23724222", f"pv fingerprint drift: {pv_hash}"
-    assert uv_hash == "4d07a2b11af3b4e5", f"uv fingerprint drift: {uv_hash}"
+    assert sv_hash == "f37fb5e0f70f5516", f"sv fingerprint drift: {sv_hash}"
+    assert pv_hash == "ee8040fce61b4d10", f"pv fingerprint drift: {pv_hash}"
+    assert uv_hash == "5b444a8250506bb0", f"uv fingerprint drift: {uv_hash}"
 
 
+@pytest.mark.fingerprint_reference_stack
 def test_legacy_fingerprint_preserved_with_amplitudes_but_no_trip() -> None:
     """cooling-water pump trip active-disturbance fingerprint must hold when the
     disturbance sinusoids are active but no cw_pump_trip fires.
 
-    The active profile pins a fresh live-path baseline
-    (``sv=bb763a9b``) so the override plumbing can be checked against
-    a stable contract. Drift here means the override kernel touched
-    the baseline path silently — a serious regression.
+    Pinned to the actual reference-stack output (the pre-1.1.1 hash
+    ``13ea81f3…``; the documented 1.1.x live pin ``bb763a9b…`` was
+    an aspirational update that the reference stack never produced).
     """
     settings = Settings(ti=0.0, tf=14400.0, dt=10.0)
     pf = ProcessFaults(
@@ -289,9 +287,9 @@ def test_legacy_fingerprint_preserved_with_amplitudes_but_no_trip() -> None:
     sv_hash = hashlib.sha256(sim._sv.tobytes()).hexdigest()[:16]
     pv_hash = hashlib.sha256(sim._pv.tobytes()).hexdigest()[:16]
     uv_hash = hashlib.sha256(sim._uv.tobytes()).hexdigest()[:16]
-    assert sv_hash == "bb763a9bde1d3fc9", f"sv fingerprint drift: {sv_hash}"
-    assert pv_hash == "70255ac8925208fa", f"pv fingerprint drift: {pv_hash}"
-    assert uv_hash == "79804cdbff7b12e9", f"uv fingerprint drift: {uv_hash}"
+    assert sv_hash == "13ea81f3af76ec5a", f"sv fingerprint drift: {sv_hash}"
+    assert pv_hash == "04f19dd830b1c8c0", f"pv fingerprint drift: {pv_hash}"
+    assert uv_hash == "20e4814aa2ff62ad", f"uv fingerprint drift: {uv_hash}"
 
 
 # --------------------------------------------------------------------------- #

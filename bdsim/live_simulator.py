@@ -44,18 +44,18 @@ import numpy as np
 from scipy.integrate import solve_ivp
 
 from .config import (
-    Parameters,
-    ProcessFaults,
-    SensorFaults,
-    ValveFaults,
     ARMAX,
+    Parameters,
     PIDController,
+    ProcessFaults,
+    Results,
+    SensorFaults,
     Settings,
     StepResult,
-    Results,
+    ValveFaults,
 )
+from .fouling_modes import FoulingMode, FoulingModeStepper
 from .ode import AEmodel, make_rhs
-from .thermo import side_reactions
 from .simulation import (
     _armax_update_jit,
     _clogging_kit,
@@ -65,7 +65,7 @@ from .simulation import (
     _PIDState,
     _stiction_step,
 )
-from .fouling_modes import FoulingMode, FoulingModeStepper
+from .thermo import side_reactions
 
 
 class LiveSimulator:
@@ -146,7 +146,7 @@ class LiveSimulator:
         # on every LiveSimulator instantiation.
         self._spectrum_generator: SpectrumGenerator | None = None
         if pfaults is not None and pfaults.spectrum_enabled:
-            from .spectra import SpectrumGenerator, SpectrumConfig
+            from .spectra import SpectrumConfig, SpectrumGenerator
             self._spectrum_generator = SpectrumGenerator(
                 SpectrumConfig(
                     enabled=True,
@@ -1371,9 +1371,9 @@ class LiveSimulator:
     # ------------------------------------------------------------------ #
     # Context manager (Q2 approved: yes)
     # ------------------------------------------------------------------ #
-    def __enter__(self) -> "LiveSimulator":
+    def __enter__(self) -> LiveSimulator:
         return self
 
-    def __exit__(self, *exc: Any) -> None:
+    def __exit__(self, *exc: object) -> None:
         # No resources to release; reset to a clean state for next use.
         self.reset()

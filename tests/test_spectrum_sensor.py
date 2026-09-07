@@ -24,6 +24,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from bdsim.config import ProcessFaults
+from bdsim.live_simulator import LiveSimulator
 from bdsim.spectra import (
     SpectrumConfig,
     SpectrumGenerator,
@@ -32,9 +34,6 @@ from bdsim.spectra import (
     _load_reference_spectra,
     comp_spectrum,
 )
-from bdsim.config import ProcessFaults
-from bdsim.live_simulator import LiveSimulator
-
 
 # ---------------------------------------------------------------------------
 # Reference spectra load

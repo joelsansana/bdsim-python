@@ -42,7 +42,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Optional
 
 import numpy as np
 
@@ -117,7 +116,7 @@ class FoulingModeStepper:
         t: float,
         mode: int | FoulingMode,
         xRG: float = 0.0,
-        rng: Optional[np.random.Generator] = None,
+        rng: np.random.Generator | None = None,
     ) -> tuple[float, float]:
         """Advance the stepper one tick.
 

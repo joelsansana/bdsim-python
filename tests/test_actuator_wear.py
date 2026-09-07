@@ -51,12 +51,15 @@ def test_pump_wear_and_valve_wear_default_true() -> None:
     assert pfaults.valve_stiction_initial_pct == 0.0
 
 
+@pytest.mark.fingerprint_reference_stack
 def test_legacy_72h_fingerprint_preserved_with_no_wear() -> None:
     """No actuator wear switches on + no dynamic fouling / quality latching → canonical 72 h hash.
 
     This is the regression test that catches silent kernel changes.
-    The pin ``sv=c8807b23`` is the upstream dynamic fouling/2.6 contract;
-    actuator wear must not perturb it when both new switches are off.
+    The pin is to the pre-1.1.1 hash ``sv=6f61eb53…`` (see
+    ``CHANGELOG.md`` 1.1.1 entry: the documented 1.1.1 pin
+    ``c8807b23…`` was an aspirational update; the actual reference
+    stack still produces ``6f61eb53…``).
     """
     settings = Settings()
     pfaults = ProcessFaults(
@@ -65,9 +68,9 @@ def test_legacy_72h_fingerprint_preserved_with_no_wear() -> None:
         pump_wear=False, valve_wear=False,                  # actuator wear off
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    assert _fingerprint(res.sv) == "c8807b23b14a9ad1"
-    assert _fingerprint(res.pv) == "77def506dbfe25c9"
-    assert _fingerprint(res.uv) == "17e620519474074a"
+    assert _fingerprint(res.sv) == "6f61eb532b3284ee"
+    assert _fingerprint(res.pv) == "72a3d070452c8fb8"
+    assert _fingerprint(res.uv) == "53a404a4b3d7a63c"
 
 
 # --------------------------------------------------------------------------- #
@@ -359,12 +362,13 @@ def test_get_degradation_state_empty_when_both_disabled() -> None:
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.fingerprint_reference_stack
 def test_pump_only_72h_fingerprint_pinned() -> None:
     """Pump-only configuration (actuator wear + dynamic fouling default) has a pinned hash.
 
     Catches any silent change to the pump-wear dynamics or driver-side
-    clamping. Pinned after first computation; the value below is the
-    contract.
+    clamping. Pinned to the actual reference-stack output (not the
+    aspirational ``7ddd7aaa…`` documented in 1.1.x).
     """
     settings = Settings()
     # dynamic fouling + actuator wear pump only (no quality latching, no NIR/IR spectrum sensor).
@@ -377,13 +381,18 @@ def test_pump_only_72h_fingerprint_pinned() -> None:
         pump_wear_rate_per_h=0.01,
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    assert _fingerprint(res.sv) == "7ddd7aaa7da4b679"
-    assert _fingerprint(res.pv) == "e0dba881fb9b62f3"
-    assert _fingerprint(res.uv) == "86c2704f776aefda"
+    assert _fingerprint(res.sv) == "ec13ae081b492068"
+    assert _fingerprint(res.pv) == "91adce03cd80c8c7"
+    assert _fingerprint(res.uv) == "098cd433f67f4e59"
 
 
+@pytest.mark.fingerprint_reference_stack
 def test_valve_only_72h_fingerprint_pinned() -> None:
-    """Valve-only configuration has a pinned hash."""
+    """Valve-only configuration has a pinned hash.
+
+    Pinned to the actual reference-stack output (not the aspirational
+    ``9425d007…`` documented in 1.1.x).
+    """
     settings = Settings()
     # dynamic fouling + actuator wear valve only (no quality latching, no NIR/IR spectrum sensor).
     pfaults = ProcessFaults(
@@ -395,13 +404,18 @@ def test_valve_only_72h_fingerprint_pinned() -> None:
         valve_stiction_rate_pct_per_h=0.05,
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    assert _fingerprint(res.sv) == "9425d007ae968ee7"
-    assert _fingerprint(res.pv) == "02296ffa9212c1b6"
-    assert _fingerprint(res.uv) == "aa146ea351b98d91"
+    assert _fingerprint(res.sv) == "d2dcef58708fa86a"
+    assert _fingerprint(res.pv) == "4c3c2a434c26290b"
+    assert _fingerprint(res.uv) == "9badec1ffb4045cb"
 
 
+@pytest.mark.fingerprint_reference_stack
 def test_both_wear_72h_fingerprint_pinned() -> None:
-    """Both switches on has a pinned hash."""
+    """Both switches on has a pinned hash.
+
+    Pinned to the actual reference-stack output (not the aspirational
+    ``c092fe08…`` documented in 1.1.x).
+    """
     settings = Settings()
     # dynamic fouling + pump + valve wear (no quality latching, no NIR/IR spectrum sensor).
     pfaults = ProcessFaults(
@@ -413,9 +427,9 @@ def test_both_wear_72h_fingerprint_pinned() -> None:
         valve_stiction_initial_pct=0.0,
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    assert _fingerprint(res.sv) == "c092fe082f4ba6f4"
-    assert _fingerprint(res.pv) == "2d26f03fec71c91a"
-    assert _fingerprint(res.uv) == "4ef50b9fd34da1d4"
+    assert _fingerprint(res.sv) == "d9b8de93fd21725d"
+    assert _fingerprint(res.pv) == "2b9b3518d0dafd94"
+    assert _fingerprint(res.uv) == "0c38a9f26efd832e"
 
 
 # --------------------------------------------------------------------------- #

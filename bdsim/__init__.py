@@ -32,45 +32,55 @@ The port is faithful to the MATLAB semantics but uses modern Python idioms
 """
 
 from .config import (
-    Parameters,
-    ProcessFaults,
-    SensorFaults,
-    ValveFaults,
     ARMAX,
+    Parameters,
     PIDController,
-    Settings,
+    ProcessFaults,
     Results,
+    SensorFaults,
+    Settings,
     StepResult,
+    ValveFaults,
 )
-from .thermo import Qoil, Vmolar, Mmx, cpmx, side_reactions
 from .kinetics import rxrates
-from .split_nn import DecanterSplitNet, split
-from .ode import ODEmodel, AEmodel
+from .live_simulator import LiveSimulator
+from .ode import AEmodel, ODEmodel
+from .simulation import run, run_with
 from .spectra import (
     SpectrumConfig,
     SpectrumGenerator,
     SpectrumSample,
     comp_spectrum,
 )
-from .simulation import run, run_with
-from .live_simulator import LiveSimulator
+from .split_nn import DecanterSplitNet, split
+from .thermo import Mmx, Qoil, Vmolar, cpmx, side_reactions
 
 __version__ = "1.2.0"
 __all__ = [
+    "ARMAX",
+    "AEmodel",
+    "DecanterSplitNet",
+    "LiveSimulator",
+    "Mmx",
+    "ODEmodel",
+    "PIDController",
     "Parameters",
     "ProcessFaults",
-    "SensorFaults",
-    "ValveFaults",
-    "ARMAX",
-    "PIDController",
-    "Settings",
+    "Qoil",
     "Results",
+    "SensorFaults",
+    "Settings",
+    "SpectrumConfig",
+    "SpectrumGenerator",
+    "SpectrumSample",
     "StepResult",
-    "Qoil", "Vmolar", "Mmx", "cpmx", "side_reactions",
+    "ValveFaults",
+    "Vmolar",
+    "comp_spectrum",
+    "cpmx",
+    "run",
+    "run_with",
     "rxrates",
-    "DecanterSplitNet", "split",
-    "ODEmodel", "AEmodel",
-    "SpectrumConfig", "SpectrumGenerator", "SpectrumSample", "comp_spectrum",
-    "run", "run_with",
-    "LiveSimulator",
+    "side_reactions",
+    "split",
 ] 

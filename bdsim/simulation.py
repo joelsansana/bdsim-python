@@ -30,18 +30,17 @@ from numba import njit
 from scipy.integrate import solve_ivp
 
 from .config import (
-    Parameters,
-    ProcessFaults,
-    SensorFaults,
-    ValveFaults,
     ARMAX,
+    Parameters,
     PIDController,
-    Settings,
+    ProcessFaults,
     Results,
+    SensorFaults,
+    Settings,
+    ValveFaults,
 )
-from .ode import AEmodel, make_rhs, _qoil_jit
+from .ode import AEmodel, _qoil_jit, make_rhs
 from .thermo import side_reactions
-
 
 # -----------------------------------------------------------------------------
 # Filter constants (clogging_kit.m)
@@ -89,8 +88,8 @@ def _intermittence(
             tnew = tt + sfaults.tmaxInterm[k] * np.random.rand()
             tnew = min(tnew - (tnew % dt), tf)
             if np.random.rand() < 0.5:
-                ind1 = int(round((tt - ti) / dt + 1))
-                ind2 = int(round((tnew - ti) / dt + 1))
+                ind1 = round((tt - ti) / dt + 1)
+                ind2 = round((tnew - ti) / dt + 1)
                 signal[ind1:ind2 + 1, k] = 1.0
                 a[ind1:ind2 + 1, k] = 1.0
                 b[ind1:ind2 + 1, k] = 0.0

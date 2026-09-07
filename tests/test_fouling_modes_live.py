@@ -16,9 +16,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from bdsim.live_simulator import LiveSimulator
 from bdsim.fouling_modes import FoulingMode
-
+from bdsim.live_simulator import LiveSimulator
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -30,7 +29,7 @@ def _build_sim(**pfaults_overrides) -> LiveSimulator:
     Short horizon (``tf = 600s``) keeps the integration cost low so
     the tests can iterate over many mode combinations in seconds.
     """
-    from bdsim.config import Settings, ProcessFaults
+    from bdsim.config import ProcessFaults, Settings
 
     settings = Settings()
     settings.tf = 600.0
@@ -319,7 +318,7 @@ def test_no_window_default_is_byte_identical_to_legacy():
     to confirm the new knobs don't activate the windowed path
     silently.
     """
-    base_kwargs = dict(fouling_dynamic=True)
+    base_kwargs = {"fouling_dynamic": True}
     # (a) defaults — new knobs at zero
     sim_a = _build_sim(**base_kwargs)
     factor_a = sim_a.run_to_completion().factor

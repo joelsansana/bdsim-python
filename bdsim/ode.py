@@ -39,7 +39,6 @@ from numba import njit
 
 from .split_nn import split
 
-
 # -----------------------------------------------------------------------------
 # JIT-friendly parameter pack (replaces the Python-side Parameters dataclass
 # inside the JIT hot path)
@@ -299,7 +298,7 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
     cpmolL = (cpmol[0] * xL0 + cpmol[1] * xL1 + cpmol[2] * xL2 +
               cpmol[3] * xL3 + cpmol[4] * xL4 + cpmol[5] * xL5)
     cpmolH = (cpmol[3] * xH3 + cpmol[4] * xH4 + cpmol[5] * xH5)
-    dTD = NR * cpmolR / ((nL * cpmolL + nH * cpmolH)) * (Theat - TD)
+    dTD = NR * cpmolR / (nL * cpmolL + nH * cpmolH) * (Theat - TD)
 
     # ------------------- Valves
     vinputo = u[0]

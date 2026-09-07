@@ -745,7 +745,7 @@ class Results:
                                                               # static legacy) the kernel used.
 
     # Display-unit conversions (matching upstream's final plotting block)
-    def in_display_units(self) -> "Results":
+    def in_display_units(self) -> Results:
         """Convert to °C / kg/h as the upstream plotting block does.
 
         Returns a *new* Results object; original data is unchanged.

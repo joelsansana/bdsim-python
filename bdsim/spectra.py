@@ -51,7 +51,6 @@ from importlib import resources
 
 import numpy as np
 
-
 # Number of species per location. The MATLAB upstream supports the
 # dryer locations too (sv(22:27), sv(28:33)) but our state vector
 # doesn't model washer/dryer downstream — we only have the reactor

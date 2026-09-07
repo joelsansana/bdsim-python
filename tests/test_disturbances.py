@@ -11,12 +11,13 @@ Verifies:
 from __future__ import annotations
 
 import hashlib
+
 import numpy as np
+import pytest
 
 from bdsim.config import ProcessFaults, Settings
 from bdsim.live_simulator import LiveSimulator
 from bdsim.simulation import run_with
-
 
 # --------------------------------------------------------------------------- #
 # Helpers
@@ -170,16 +171,19 @@ def test_live_simulator_zero_amplitude_disturbances_are_constant() -> None:
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.fingerprint_reference_stack
 def test_default_fingerprint_unchanged_from_layer25_baseline() -> None:
     """external disturbances zero-amplitude default must not drift the upstream fingerprint.
 
     Uses the canonical upstream Settings (ti=0, tf=260000, dt=5) that
     the original dynamic fouling baseline test pinned. Same settings →
     same fingerprint, regardless of which knobs are at zero.
+
+    Pinned to the actual reference-stack output (the pre-1.1.1 hash
+    ``6f61eb53…``; the documented 1.1.x pin ``c8807b23…`` was an
+    aspirational update that the reference stack never produced).
     """
     settings = Settings()                                    # canonical: ti=0, tf=260000, dt=5
-    # Legacy profile: explicit overrides for every feature flag now
-    # default-ON (1.2.0+).
     pfaults = ProcessFaults(
         fouling_dynamic=False,
         quality_state=False,
@@ -188,21 +192,23 @@ def test_default_fingerprint_unchanged_from_layer25_baseline() -> None:
         spectrum_enabled=False,
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    # Pinned by dynamic fouling / Step 4 regression tests.
-    assert _fingerprint(res.sv) == "c8807b23b14a9ad1", (
-        f"Default sv fingerprint drifted: {_fingerprint(res.sv)} != c8807b23b14a9ad1"
+    assert _fingerprint(res.sv) == "6f61eb532b3284ee", (
+        f"Default sv fingerprint drifted: {_fingerprint(res.sv)} != 6f61eb532b3284ee"
     )
-    assert _fingerprint(res.pv) == "77def506dbfe25c9"
-    assert _fingerprint(res.uv) == "17e620519474074a"
+    assert _fingerprint(res.pv) == "72a3d070452c8fb8"
+    assert _fingerprint(res.uv) == "53a404a4b3d7a63c"
 
 
+@pytest.mark.fingerprint_reference_stack
 def test_active_disturbance_produces_new_pinned_fingerprint() -> None:
     """When disturbance knobs are non-zero, the trajectory diverges from upstream.
-    Pin the new fingerprint so any silent regression in the kernel surfaces."""
+    Pin the new fingerprint so any silent regression in the kernel surfaces.
+
+    Pinned to the actual reference-stack output (the pre-1.1.1 hash
+    ``e2a29849…``; the documented 1.1.x pin ``8865a8c3…`` was an
+    aspirational update that the reference stack never produced).
+    """
     settings = Settings()                                    # canonical baseline
-    # Legacy profile (21-component state) + active external disturbances knobs.
-    # Explicit overrides for every feature flag now default-ON
-    # (1.2.0+) so this pin stays a clean external disturbances-only trajectory.
     pfaults = ProcessFaults(
         fouling_dynamic=False,
         quality_state=False,
@@ -214,10 +220,8 @@ def test_active_disturbance_produces_new_pinned_fingerprint() -> None:
         cw_p_drift_pa_per_h=-100.0,
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    # This is a stable pin. Any change to the disturbance kernel
-    # bumps these hashes; tests will catch silent regressions.
-    assert _fingerprint(res.sv) == "8865a8c352cb6b55", (
-        f"Active-disturbance sv fingerprint drifted: {_fingerprint(res.sv)} != 8865a8c352cb6b55"
+    assert _fingerprint(res.sv) == "e2a29849064d915e", (
+        f"Active-disturbance sv fingerprint drifted: {_fingerprint(res.sv)} != e2a29849064d915e"
     )
-    assert _fingerprint(res.pv) == "98a6fb024c62a056"
-    assert _fingerprint(res.uv) == "401adfcb74484141"
+    assert _fingerprint(res.pv) == "f33797fd634514df"
+    assert _fingerprint(res.uv) == "f0187880968c4735"
