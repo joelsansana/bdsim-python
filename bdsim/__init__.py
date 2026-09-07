@@ -18,7 +18,7 @@ Public API
 - :class:`DecanterSplitNet` — trainable PyTorch port of the decanter split
   neural network (Brásio et al.)
 - :class:`SpectrumGenerator`, :class:`SpectrumConfig`, :class:`SpectrumSample`,
-  :func:`comp_spectrum` — Layer 2.8 NIR/IR virtual spectrum sensor
+  :func:`comp_spectrum` — NIR/IR virtual spectrum sensor
   (port of upstream ``comp_spectrum.m``). Sample at reactor / light-phase /
   heavy-phase decanter, Beer-Lambert + photometric noise + AWGN + drift.
   See :class:`ProcessFaults.spectrum_enabled` to enable.

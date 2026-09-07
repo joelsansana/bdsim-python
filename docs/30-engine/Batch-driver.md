@@ -9,7 +9,7 @@ Module: `bdsim/simulation.py`. Entry points: `run()`, `run_with(...)`.
 
 ## Role
 
-Integrate the full horizon offline and return a [[Config-surface|Results]] object (`t`, `sv`, `pv`, `uv`, `sp`, optional `quality`, `disturbances`, `factor`, …). Used for ML experiments and fingerprint pins.
+Integrate the full horizon offline and return a [Results](../30-engine/Config-surface.md) object (`t`, `sv`, `pv`, `uv`, `sp`, optional `quality`, `disturbances`, `factor`, …). Used for ML experiments and fingerprint pins.
 
 ## High-level loop
 
@@ -36,7 +36,7 @@ run_with(settings, pfaults, sfaults, vfaults, seed, …):
   bind pfaults into settings for disturbances(t)
   allocate sv, uv, pv, sp
   for i in 1 .. len(t)-1:
-      update exogenous / ARMAX / Layer tracks
+      update exogenous / ARMAX / feature tracks
       if i % nic == 0: PID → uv
       apply valve stiction
       integrate ODE from t[i-1] to t[i]
@@ -53,6 +53,6 @@ from bdsim.config import ProcessFaults
 res = run_with(pfaults=ProcessFaults(fouling_dynamic=False), seed=42)
 ```
 
-See [`USER.md`](../../USER.md) for recipes. Contract: [[Byte-identical-contract]].
+See [`USER.md`](../../USER.md) for recipes. Contract: [Byte-identical-contract](../00-orientation/Byte-identical-contract.md).
 
-Related: [[Live-simulator]], [[ODE-and-AE]], [[Fingerprints-and-tests]], [[Sensors-and-control]]
+Related: [Live-simulator](../30-engine/Live-simulator.md), [ODE-and-AE](../20-math/ODE-and-AE.md), [Fingerprints-and-tests](../30-engine/Fingerprints-and-tests.md), [Sensors-and-control](../10-plant/Sensors-and-control.md)

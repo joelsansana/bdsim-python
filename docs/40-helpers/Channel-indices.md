@@ -8,7 +8,7 @@ aliases: [sv indices, pv indices, Channel map]
 Cheat sheet for juniors. Source of truth: `ode.py` header, `_measurements`, `config.Results`. Update this note when widths change.
 
 > [!tip]
-> **Runtime default** (`ProcessFaults()`): `fouling_dynamic=True` → **`sv` width 22** with α at `sv[21]`. The 21-column table below is the **legacy fingerprint profile** (`fouling_dynamic=False`). See [[Byte-identical-contract#Canonical profiles]].
+> **Runtime default** (`ProcessFaults()`): `fouling_dynamic=True` → **`sv` width 22** with α at `sv[21]`. The 21-column table below is the **legacy fingerprint profile** (`fouling_dynamic=False`). See [Byte-identical-contract](../00-orientation/Byte-identical-contract.md#canonical-profiles).
 
 ## State `sv` — baseline 21 (legacy / pin profile)
 
@@ -36,7 +36,7 @@ Drivers grow `sv` when flags are on (see `live_simulator` / `simulation` constru
 | Valve stiction % | wear slot | `valve_wear` | Default off |
 
 > [!warning]
-> Exact indices when **multiple** Layers combine depend on construction order in the drivers. Read the allocator in `LiveSimulator` / batch setup when writing fusion code — do not hardcode `28` without checking flags.
+> Exact indices when **multiple** feature flags combine depend on construction order in the drivers. Read the allocator in `LiveSimulator` / batch setup when writing fusion code — do not hardcode `28` without checking flags.
 
 ## Inputs `uv` / `u` (6)
 
@@ -63,12 +63,12 @@ Drivers grow `sv` when flags are on (see `live_simulator` / `simulation` constru
 
 TR, TD, hH, Foil (engine often stores Foil in kg/s; display converts to kg/h).
 
-## Disturbances (Layer 2.6)
+## Disturbances (external disturbances)
 
 Shape `(…, 3)`: `[Tamb_K, Tcw_K, Pcw_Pa]`.
 
-## Quality latched (Layer 2.1)
+## Quality latched (quality latching)
 
 `[FAME%, water_ppm, IV]`.
 
-Related: [[ODE-and-AE]], [[Sensors-and-control]], [[Layers-roadmap]], [[Acronyms]]
+Related: [ODE-and-AE](../20-math/ODE-and-AE.md), [Sensors-and-control](../10-plant/Sensors-and-control.md), [Config-surface](../30-engine/Config-surface.md), [Acronyms](../Acronyms.md)

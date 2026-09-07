@@ -10,7 +10,7 @@ The person who keeps bdsim installable, runnable, and reproducible on this box (
 
 Use this path whenever you run the fingerprint suite or need trajectories that match the pinned hashes in `tests/`.
 
-**Reference stack for bdsim 1.1.1 pins:** Python **3.10** + committed [`uv.lock`](uv.lock) → `numpy==2.2.6`, `scipy==1.15.3`, `numba==0.66.0` (macOS arm64 reference host). Source of truth is the lockfile, not loose `pyproject.toml` ranges.
+**Reference stack for bdsim 1.2.0 pins:** Python **3.10** + committed [`uv.lock`](uv.lock) → `numpy==2.2.6`, `scipy==1.15.3`, `numba==0.66.0` (macOS arm64 reference host). Source of truth is the lockfile, not loose `pyproject.toml` ranges.
 
 From this repo's root:
 
@@ -89,23 +89,23 @@ uv run python -m pytest tests/test_smoke.py -q
 
 ## Fingerprint regression
 
-`tests/test_live_simulator.py` (and the per-Layer tests) pin SHA-256 fingerprints over the full trajectory. `tests/test_smoke.py` checks shapes, physical ranges, and determinism only — no SHA pins. A silent numerical drift in a kernel will fail loud.
+`tests/test_live_simulator.py` (and the per-feature tests) pin SHA-256 fingerprints over the full trajectory. `tests/test_smoke.py` checks shapes, physical ranges, and determinism only — no SHA pins. A silent numerical drift in a kernel will fail loud.
 
 Named profiles (see `docs/00-orientation/Byte-identical-contract.md` and `AGENTS.md`):
 
 | Path | Profile | Meaning | Hash |
 |---|---|---|---|
-| batch | runtime default (1.2.0+) | Bare `ProcessFaults()` enables Layers 2.5 + 2.1 + 2.4 (both) + 2.8a | `sv=691cf51b4c1a0bc2` `pv=baedc29fcfa8f526` `uv=4e4134e40fa0c1ad` |
-| batch | legacy fingerprint | Tests pass all Layer masters `False` (21-wide state) | `sv=c8807b23b14a9ad1` `pv=77def506dbfe25c9` `uv=17e620519474074a` |
-| batch | Layer 2.5 fingerprint | Dynamic HEX fouling, all other masters off (22-wide state) | `sv=696531c4990c5b1e` |
-| batch | Layer 2.5 + Layer 2.1 | `fouling_dynamic=True quality_state=True` (27-wide state) | `sv=d663e17d687b1133` |
-| batch | Layer 2.4 pump-only | `pump_wear=True`, no valve_wear / quality_state (23-wide state) | `sv=7ddd7aaa7da4b679` |
-| batch | Layer 2.4 valve-only | `valve_wear=True`, no pump_wear / quality_state (23-wide state) | `sv=9425d007ae968ee7` |
-| batch | Layer 2.4 both | `pump_wear=True valve_wear=True`, no quality_state (24-wide state) | `sv=c092fe082f4ba6f4` |
-| batch | Layer 2.6 (active disturbance) | Nonzero disturbance amplitudes, all other masters off | `sv=8865a8c352cb6b55` |
+| batch | runtime default (1.2.0+) | Bare `ProcessFaults()` enables dynamic fouling, quality latching, pump + valve wear, and the NIR/IR spectrum sensor | `sv=691cf51b4c1a0bc2` `pv=baedc29fcfa8f526` `uv=4e4134e40fa0c1ad` |
+| batch | legacy fingerprint | Tests pass all feature flags `False` (21-wide state) | `sv=c8807b23b14a9ad1` `pv=77def506dbfe25c9` `uv=17e620519474074a` |
+| batch | dynamic-fouling fingerprint | Dynamic HEX fouling, all other masters off (22-wide state) | `sv=696531c4990c5b1e` |
+| batch | dynamic-fouling + quality-latching | `fouling_dynamic=True quality_state=True` (27-wide state) | `sv=d663e17d687b1133` |
+| batch | pump-only actuator wear | `pump_wear=True`, no valve_wear / quality_state (23-wide state) | `sv=7ddd7aaa7da4b679` |
+| batch | valve-only actuator wear | `valve_wear=True`, no pump_wear / quality_state (23-wide state) | `sv=9425d007ae968ee7` |
+| batch | pump + valve wear | `pump_wear=True valve_wear=True`, no quality_state (24-wide state) | `sv=c092fe082f4ba6f4` |
+| batch | external disturbances (active) | Nonzero disturbance amplitudes, all other masters off | `sv=8865a8c352cb6b55` |
 | live | runtime default (1.2.0+) | Bare `ProcessFaults()` (`tf=14400 dt=10`) | `sv=80f6f04683703382` `pv=9e2b2081f469e473` `uv=c3a05be9a234fe2a` |
 | live | legacy fingerprint | Matching legacy knobs | `sv=23c3c885694c3d24` |
-| live | Layer 2.6 (active disturbance) | | `sv=bb763a9bde1d3fc9` |
+| live | external disturbances (active) | | `sv=bb763a9bde1d3fc9` |
 
 Runtime default (`ProcessFaults()`) is now the broad-defaults profile — `fouling_dynamic=True`, `quality_state=True`, `pump_wear=True`, `valve_wear=True`, `spectrum_enabled=True` (sv width 30). Tests and demos needing a narrower state must opt out explicitly via the relevant `*_state=False` / `*_wear=False` / `spectrum_enabled=False` overrides. When a fingerprint updates, that's a "we changed the math **or the numerical stack**" signal. Pins as of **1.2.0** match `uv.lock` (`numpy==2.2.6`, `scipy==1.15.3`, `numba==0.66.0`). Document the why in the commit body and update the pin in the test file. Don't suppress the test.
 

@@ -9,7 +9,7 @@ Module: `bdsim/split_nn.py`. Port of Brásio / Romanenko / Fernandes split MLP (
 
 ## Role in the plant
 
-Predicts split fractions \(\eta_E, \eta_M, \eta_G\) that close the decanter mass balances inside [[ODE-and-AE]]. Evaluated **outside** the Numba JIT block once per step (weights are small; transition is amortized).
+Predicts split fractions \(\eta_E, \eta_M, \eta_G\) that close the decanter mass balances inside [ODE-and-AE](../20-math/ODE-and-AE.md). Evaluated **outside** the Numba JIT block once per step (weights are small; transition is amortized).
 
 ## Architecture
 
@@ -36,4 +36,4 @@ flowchart LR
 > [!note]
 > Weights live in source, not a separate `.pt` file. Treat numerical values as part of the faithful port.
 
-Related: [[ODE-and-AE]], [[Process-flow]], [[Units-and-streams]], [[Acronyms#MLP]]
+Related: [ODE-and-AE](../20-math/ODE-and-AE.md), [Process-flow](../10-plant/Process-flow.md), [Units-and-streams](../10-plant/Units-and-streams.md), [Acronyms](../Acronyms.md#mlp)

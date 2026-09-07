@@ -1,5 +1,5 @@
 """
-NIR/IR absorbance spectrum model — Layer 2.8 (Roadmap).
+NIR/IR absorbance spectrum model — NIR/IR spectrum sensor (Roadmap).
 
 Port of ``BDSIM_spectr/comp_spectrum.m`` (Eugeniu Strelet, Dec 2019).
 

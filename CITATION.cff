@@ -8,7 +8,7 @@ message: >-
   contribution is about the plant model itself.
 type: software
 title: "bdsim — Biodiesel Process Simulator (Python)"
-version: "1.1.1"
+version: "1.2.0"
 license: GPL-3.0-or-later
 abstract: >-
   Faithful Python port of Natércia Fernandes' BDSIM (Coimbra, 2019): a

@@ -5,7 +5,7 @@ aliases: [ODEmodel, State equations, AEmodel]
 
 # ODE-and-AE
 
-Plant dynamics live in `bdsim/ode.py`: Numba-compiled **RHS** (`ODEmodel`) plus algebraic helpers (`AEmodel`). Do not reorder `@njit` statements — see [[Byte-identical-contract]].
+Plant dynamics live in `bdsim/ode.py`: Numba-compiled **RHS** (`ODEmodel`) plus algebraic helpers (`AEmodel`). Do not reorder `@njit` statements — see [Byte-identical-contract](../00-orientation/Byte-identical-contract.md).
 
 ## Baseline state vector (21)
 
@@ -23,11 +23,11 @@ Documented at top of `ode.py`:
 | `19` | lifto | Oil valve lift, % |
 | `20` | liftH | Heavy valve lift, % |
 
-Optional Layer slots grow beyond 21 — [[Channel-indices]].
+Optional feature-flagged slots grow beyond 21 — [Channel-indices](../40-helpers/Channel-indices.md).
 
 ## Inputs `u` (6)
 
-`vinputo`, `Tmet`, `Fmet`, `Toil`, `Qheat`, `vinputH` — see [[Channel-indices]].
+`vinputo`, `Tmet`, `Fmet`, `Toil`, `Qheat`, `vinputH` — see [Channel-indices](../40-helpers/Channel-indices.md).
 
 ## Pseudocode (one integration step)
 
@@ -36,7 +36,7 @@ Optional Layer slots grow beyond 21 — [[Channel-indices]].
 2. Pack parameters into JIT-friendly args
 3. ds/dt = _ode_rhs_jit(t, sv, u, factor, …)
    - filter flow Qoil(r, valve)
-   - reaction rates at TR ([[Kinetics]])
+   - reaction rates at TR ([Kinetics](../20-math/Kinetics.md))
    - mass / energy balances (reactor, decanter, valves)
    - optional: dα/dt, quality states, wear states
 4. solve_ivp / step advances sv by dt
@@ -51,10 +51,10 @@ $$
 T_{\mathrm{heat}} \sim T_R - \mathrm{factor}\cdot\frac{Q_{\mathrm{heat}}}{N_R\, c_{p,\mathrm{mol},R}}
 $$
 
-`factor` comes from continuous α, windowed ARMAX modes, or static legacy series ([[Layers-roadmap]]).
+`factor` comes from continuous α, windowed ARMAX modes, or static legacy series ([Config-surface](../30-engine/Config-surface.md)).
 
 ## AE model
 
 Algebraic relations (not integrated states) — e.g. derived flows / washer-dryer outputs consumed by drivers when building `xLend` / `yLend`.
 
-Related: [[Kinetics]], [[Thermo]], [[Decanter-split-NN]], [[Repo-map]], [[How-to-work-here]]
+Related: [Kinetics](../20-math/Kinetics.md), [Thermo](../20-math/Thermo.md), [Decanter-split-NN](../20-math/Decanter-split-NN.md), [Repo-map](../00-orientation/Repo-map.md), [Practical dev workflow](../../AGENTS.md)

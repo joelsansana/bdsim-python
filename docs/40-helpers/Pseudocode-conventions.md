@@ -13,7 +13,7 @@ How this vault writes algorithms so juniors can map notes → Python.
 2. Name arrays like the code: `sv`, `pv`, `uv`, `sp`
 3. Mark JIT boundaries: “outside JIT” vs “`_ode_rhs_jit`”
 4. Prefer one step of the driver loop over a full file dump
-5. Link the implementing note: e.g. [[Batch-driver]], [[ODE-and-AE]]
+5. Link the implementing note: e.g. [Batch-driver](../30-engine/Batch-driver.md), [ODE-and-AE](../20-math/ODE-and-AE.md)
 
 ## Example shape
 
@@ -28,10 +28,10 @@ for each control period:
 
 ## Equations
 
-Use LaTeX `$$ ... $$` for balances and kinetics; keep symbols consistent with [[Units-and-streams]] and [[Acronyms]].
+Use LaTeX `$$ ... $$` for balances and kinetics; keep symbols consistent with [Units-and-streams](../10-plant/Units-and-streams.md) and [Acronyms](../Acronyms.md).
 
 ## Diagrams
 
 Mermaid `flowchart` for plant/module maps; `sequenceDiagram` for live step / PID. Keep node IDs camelCase without spaces.
 
-Related: [[Home]], [[How-to-work-here]], [[Batch-driver]], [[Live-simulator]]
+Related: [Home](../Home.md), [Practical dev workflow](../../AGENTS.md), [Batch-driver](../30-engine/Batch-driver.md), [Live-simulator](../30-engine/Live-simulator.md)

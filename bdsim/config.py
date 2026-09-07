@@ -97,7 +97,7 @@ class Parameters:
     K3F: float = 0.0
     K4F: float = 0.0
 
-    # ---- HEX fouling dynamics (Roadmap Layer 2.5) -------------------------
+    # ---- HEX fouling dynamics (Roadmap dynamic fouling) -------------------------
     # α is a continuous state in sv[21]. dα/dt has two terms:
     #   accumulation: k_f0 * FFA_factor(T) * exp(-E_a_f / (R * TR))
     #   decay:        k_decay * α
@@ -109,7 +109,7 @@ class Parameters:
     ffa_ref: float = 0.05                                     # reference FFA fraction (dimensionless)
     alpha_clean: float = 0.1                                  # snap value on cleaning event
 
-    # ---- Layer 2.1: quality dynamics (Roadmap item 2.1) -------------------
+    # ---- quality latching: quality dynamics (feature) -------------------
     # First-order relaxation of true quality state toward equilibrium.
     # Time constants chosen so FAME ~ 30–60 min, water ~ 15–30 min,
     # IV ~ hours at default operating point. k_q = 1/tau (1/s).
@@ -125,7 +125,7 @@ class Parameters:
     water_feed_noise: float = 1.0e-7
     iv_feed_noise: float = 1.0e-3
 
-    # ---- Layer 2.4: actuator degradation kinetics constants ----
+    # ---- actuator wear: actuator degradation kinetics constants ----
     # Pump: dh/dt = -k_pump_wear * (Q/Qnom)^p. The driver converts
     # the per-hour ``ProcessFaults.pump_wear_rate_per_h`` to a
     # per-second rate constant here so the Numba kernel sees the
@@ -145,12 +145,12 @@ class Parameters:
         self.vmol = self.M / self.ro
 
     def apply_layer24_overrides(self, pfaults: ProcessFaults) -> None:
-        """Apply Layer 2.4 kinetics overrides from ``pfaults``.
+        """Apply actuator wear kinetics overrides from ``pfaults``.
 
         Called by the driver after ``Parameters()`` is constructed so
         any caller-set ``ProcessFaults.pump_wear_rate_per_h`` etc.
         flow into the Numba-visible kinetics constants. Same pattern
-        as Layer 2.5 / 2.1's override paths.
+        as dynamic fouling / quality latching's override paths.
         """
         # Pump wear rate: convert per-hour → per-second so the kernel
         # multiplies by dt directly.
@@ -181,13 +181,13 @@ class ProcessFaults:
     ratio_robs_r: float = 0.9
     fouling: int = 1                                           # 0 off, 1 on
     foulingpar: np.ndarray = field(default_factory=lambda: np.array([3e-7]))
-    fouling_dynamic: bool = True                              # Layer 2.5: α evolves as a state when True.
+    fouling_dynamic: bool = True                              # dynamic fouling: α evolves as a state when True.
                                                               # When False, behaviour matches the legacy
                                                               # pre-baked series (factor = 1/(1 + Rf)).
                                                               # Default ON since 1.0; bare ProcessFaults() is
                                                               # NOT the legacy fingerprint profile.
 
-    # ---- Layer 2.1: quality state + feedstock quality -------------------
+    # ---- quality latching: quality state + feedstock quality -------------------
     # When quality_state=True, sv0 grows by 6 components:
     #   sv[22] = FAME%   (instantaneous true value, 0..100)
     #   sv[23] = water   (instantaneous true value, ppm)
@@ -202,7 +202,7 @@ class ProcessFaults:
     # quality_lag_mode = "lab" → 15-min default lab cycle.
     # quality_lag_mode = "online" → 60-s NIR cycle (online analyser).
     # quality_state=False preserves the upstream 21-component state.
-    quality_state: bool = True                               # Layer 2.1 master switch. Default ON as of 1.2.0:
+    quality_state: bool = True                               # quality latching master switch. Default ON as of 1.2.0:
                                                               # demos that want the legacy pre-2.1 fingerprint must
                                                               # pass quality_state=False explicitly.
     quality_lag_mode: str = "lab"
@@ -212,7 +212,7 @@ class ProcessFaults:
     lab_noise_water: float = 20.0                              # ppm absolute
     lab_noise_iv: float = 1.0                                  # g I2/100g absolute
 
-    # ---- Layer 2.6: external disturbances ----
+    # ---- external disturbances: external disturbances ----
     # All default to zero amplitude / zero drift so the legacy
     # fingerprint is preserved when disturbance_profile is left at
     # defaults (the perturbation kernel adds 0 to every channel).
@@ -233,10 +233,10 @@ class ProcessFaults:
     qheat_cw_scaling: bool = True                              # Qheat *= Pwater_cw / cw_p_nominal_pa
 
     # ------------------------------------------------------------------
-    # Layer 2.6b: cw_pump_trip mid-run override knobs. All default
+    # cooling-water pump trip: cw_pump_trip mid-run override knobs. All default
     # values are conservative and aligned with the dashboard
     # FaultSpec defaults so a no-fault sim is byte-identical to the
-    # Layer 2.6 fingerprint. Override is single-slot (a second trip
+    # external-disturbances fingerprint. Override is single-slot (a second trip
     # replaces the first); the kernel applies the envelope on top of
     # the baseline sinusoidal profile.
     # ------------------------------------------------------------------
@@ -245,7 +245,7 @@ class ProcessFaults:
     cw_pump_default_duration_s: float = 600.0                 # default trip duration when the FaultSpec doesn't set one
 
     # ------------------------------------------------------------------
-    # Layer 2.7: operator-driven disturbance knob overlays.
+    # operator disturbance knobs: operator-driven disturbance knob overlays.
     #
     # ``None`` (default) means "use the configured profile value"
     # (ambient_t_mean_k / ambient_t_amplitude_k / cw_t_mean_k /
@@ -253,7 +253,7 @@ class ProcessFaults:
     # value through ``LiveSimulator.set_*_knob()``, the field is
     # written to a float and the kernel reads from there instead.
     #
-    # All four default to ``None`` so the legacy Layer 2.6
+    # All four default to ``None`` so the legacy external disturbances
     # fingerprint is preserved (the kernel reads ``None`` → falls
     # through to the configured profile value, which is identical
     # to today's behaviour). Knobs persist for the rest of the run
@@ -269,11 +269,11 @@ class ProcessFaults:
     live_cw_p_drift_pa_per_h: float | None = None            # override cw_p_drift_pa_per_h
 
     # ------------------------------------------------------------------
-    # Layer 2.4: actuator degradation as continuous state.
+    # actuator wear: actuator degradation as continuous state.
     #
     # Two master switches, both default ``False``. When both are
-    # False the state vector is unchanged from Layer 2.7 (21
-    # components legacy, 22 + α in Layer 2.5 mode, 28 in Layer 2.1
+    # False the state vector is unchanged from operator disturbance knobs (21
+    # components legacy, 22 + α in dynamic fouling mode, 28 in quality latching
     # mode). When ``pump_wear=True`` the state vector grows by one
     # slot (sv[22] = pump_health ∈ [0, 1]). When ``valve_wear=True``
     # it grows by another slot (sv[23] = valve_stiction_pct ∈
@@ -285,20 +285,20 @@ class ProcessFaults:
     # nominal head. The trip probability is NOT kernel-side — the
     # scenario runner can read ``pump_health`` from a derived tag and
     # schedule a ``cw_pump_trip`` when it crosses the trip
-    # threshold. Trip scheduling stays where it is (Layer 2.6b);
-    # Layer 2.4 only adds the underlying wear curve.
+    # threshold. Trip scheduling stays where it is (cooling-water pump trip);
+    # actuator wear only adds the underlying wear curve.
     #
     # ``valve_stiction_pct`` reduces the effective valve gain via
     # ``kv_eff = kv * (1 - stiction / 100)``. Closed-loop
     # oscillation in TR-101 / TD-201 becomes visible as stiction
     # grows. The existing ``valve_stiction`` fault event still
-    # works as an instantaneous deadband injection; Layer 2.4
+    # works as an instantaneous deadband injection; actuator wear
     # models the slow build-up of that stiction.
     # ------------------------------------------------------------------
-    pump_wear: bool = True                                     # Layer 2.4: pump degradation state (sv[22]).
+    pump_wear: bool = True                                     # actuator wear: pump degradation state (sv[22]).
                                                                # Default ON as of 1.2.0 — pass pump_wear=False
                                                                # explicitly for the legacy fingerprint profile.
-    valve_wear: bool = True                                    # Layer 2.4: valve stiction state (sv[23]).
+    valve_wear: bool = True                                    # actuator wear: valve stiction state (sv[23]).
                                                                # Default ON as of 1.2.0 — pass valve_wear=False
                                                                # explicitly for the legacy fingerprint profile.
 
@@ -321,7 +321,7 @@ class ProcessFaults:
     valve_stiction_ceiling_pct: float = 60.0                   # upper bound — at 60 % the loop is already unstable
 
     # ------------------------------------------------------------------
-    # Layer 2.8: NIR/IR virtual spectrum sensor (port of upstream
+    # NIR/IR spectrum sensor: NIR/IR virtual spectrum sensor (port of upstream
     # ``comp_spectrum.m``). Master switch is ON by default as of
     # 1.2.0 — the spectrum is post-process only (does NOT perturb
     # the ODE state vector), so the trajectory fingerprint is
@@ -332,7 +332,7 @@ class ProcessFaults:
     # (None between fires).
     # ------------------------------------------------------------------
     spectrum_enabled: bool = True                              # Default ON as of 1.2.0 — set False to skip the
-                                                               # Layer 2.8 NIR/IR virtual sensor entirely.
+                                                               # NIR/IR virtual spectrum sensor entirely.
     spctr_t: float = 3600.0                                     # spectrum sampling period (s), default 1 h
     spctr_cs: int = 2                                           # Skoog photometric noise: 0..3
     spctr_snr_db: float = 30.0                                  # additive white Gaussian noise SNR
@@ -343,11 +343,11 @@ class ProcessFaults:
     spectra_ref_path: str | None = None                         # None → bundled bdsim/data/spectra_ref.csv
 
     # ------------------------------------------------------------------
-    # Layer 2.8b: windowed five-mode fouling stepper (port of
+    # fouling-mode windows: windowed five-mode fouling stepper (port of
     # upstream ``fouling.m``). Modes 4 and 5 are stochastic ARMAX
     # fault-injection paths; the LiveSimulator kernel applies them
     # during an active fault window, then control returns to
-    # Layer 2.5 (continuous α) or to the static legacy series
+    # dynamic fouling (continuous α) or to the static legacy series
     # (factor = 1/(1 + Rf)).
     #
     # Priority when multiple paths are configured:
@@ -359,7 +359,7 @@ class ProcessFaults:
     # ``fouling_mode_active_*`` triple is the runtime overlay
     # written by the dashboard fault handler (FOULING_MODE_4 /
     # FOULING_MODE_5 events); defaults to "off" so a no-fault
-    # sim is byte-identical to the Layer 2.7 fingerprint.
+    # sim is byte-identical to the operator-knobs fingerprint.
     # ------------------------------------------------------------------
     fouling_mode: int = 0                                      # 0..5 — global mode selector (matches upstream)
     fouling_mode_xRG_weight: bool = True                       # if True, mode-4 target includes xRG (glycerol coupling)
@@ -555,7 +555,7 @@ class Settings:
         d[:, 4] = d[:, 4] + 1000.0 * np.heaviside(t - 100000.0, 1.0)
         return d
 
-    # Layer 2.6 + Layer 2.7: external disturbance channel (lt x 3).
+    # external disturbances + operator knobs: external disturbance channel (lt x 3).
     # Returns [Tambient, Twater_cw, Pwater_cw] for every step in the
     # sim horizon. Perturbations from the daily sinusoids + slow
     # drift; the scenario runner can add event-grade perturbations
@@ -564,12 +564,12 @@ class Settings:
     # All components default to constant values when amplitude/drift
     # knobs are zero — preserves byte-identical legacy behaviour.
     #
-    # Layer 2.7: when an operator pushes a knob override through
+    # operator disturbance knobs: when an operator pushes a knob override through
     # ``LiveSimulator.set_*_knob()``, the corresponding
     # ``pfaults.live_*_mean_k`` / ``live_*_amplitude_k`` /
     # ``live_cw_p_drift_pa_per_h`` field becomes a float and is used
     # in place of the underlying profile knob. ``None`` falls through
-    # to the configured profile value (Layer 2.6 default).
+    # to the configured profile value (external disturbances default).
     def disturbances(self, t: np.ndarray) -> np.ndarray:
         pfaults = self._pfaults                  # injected by Simulation during build
         if pfaults is None:
@@ -581,7 +581,7 @@ class Settings:
                 np.full(len(t), 288.15),
                 np.full(len(t), 4.0e5),
             ])
-        # Layer 2.7: resolve operator-driven knob overlays onto the
+        # operator disturbance knobs: resolve operator-driven knob overlays onto the
         # baseline profile knobs. Read-once here so the kernel stays
         # a single read per attribute per step.
         amb_mean = (
@@ -691,7 +691,7 @@ class StepResult:
     to inspect the sim state directly.
 
     ``quality_latched`` is the lab-cycle latched measurement payload
-    (Layer 2.1). Shape ``(3,)`` with ``[FAME%, water_ppm, IV]``. Empty
+    (quality latching). Shape ``(3,)`` with ``[FAME%, water_ppm, IV]``. Empty
     array when ``ProcessFaults.quality_state`` is False.
 
     See :class:`bdsim.simulation.LiveSimulator` for the canonical usage.
@@ -704,10 +704,10 @@ class StepResult:
     sp: np.ndarray                                          # setpoints,   (4,)
     quality: dict[int, str] = field(default_factory=dict)   # sensor idx → quality
     quality_latched: np.ndarray | None = None               # lab-cycle latched values, (3,) when quality_state=True
-    disturbances: np.ndarray | None = None                  # Layer 2.6: (3,) [Tamb, Tcw, Pcw]; None when off
+    disturbances: np.ndarray | None = None                  # external disturbances: (3,) [Tamb, Tcw, Pcw]; None when off
     xLend: np.ndarray | None = None                         # washer/dryer output, (6,)
     yLend: np.ndarray | None = None                         # dryer mass fractions, (6,)
-    spectra: SpectrumSample | None = None                    # Layer 2.8: SpectrumSample at fire times, else None
+    spectra: SpectrumSample | None = None                    # NIR/IR spectrum sensor: SpectrumSample at fire times, else None
 
 
 # -----------------------------------------------------------------------------
@@ -732,10 +732,10 @@ class Results:
     yLend: np.ndarray                                         # light-phase mass frac, (lt-1, 6)
     tclean: np.ndarray                                        # filter cleaning times, s
     quality: np.ndarray | None = None                         # latched lab samples, (lt-1, 3): [FAME%, water ppm, IV]
-                                                              # Layer 2.1 — present when quality_state=True; NaN rows otherwise
-    disturbances: np.ndarray | None = None                    # Layer 2.6: external disturbance track,
+                                                              # quality latching — present when quality_state=True; NaN rows otherwise
+    disturbances: np.ndarray | None = None                    # external disturbances: external disturbance track,
                                                               # (lt-1, 3): [Tamb_K, Tcw_K, Pcw_Pa].
-    factor: np.ndarray | None = None                          # Layer 2.8b: HEX fouling factor applied at each
+    factor: np.ndarray | None = None                          # fouling-mode windows: HEX fouling factor applied at each
                                                               # step (length lt-1). Populated by both the
                                                               # batch ``run_with`` path and the
                                                               # ``LiveSimulator`` path so downstream

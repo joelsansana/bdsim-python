@@ -1,4 +1,4 @@
-"""Tests for Layer 2.6 external disturbances.
+"""Tests for the external-disturbances feature (ambient / CW amplitudes & drift).
 
 Verifies:
 - Default profile produces zero perturbation (legacy byte-identical).
@@ -171,14 +171,14 @@ def test_live_simulator_zero_amplitude_disturbances_are_constant() -> None:
 
 
 def test_default_fingerprint_unchanged_from_layer25_baseline() -> None:
-    """Layer 2.6 zero-amplitude default must not drift the upstream fingerprint.
+    """external disturbances zero-amplitude default must not drift the upstream fingerprint.
 
     Uses the canonical upstream Settings (ti=0, tf=260000, dt=5) that
-    the original Layer 2.5 baseline test pinned. Same settings →
+    the original dynamic fouling baseline test pinned. Same settings →
     same fingerprint, regardless of which knobs are at zero.
     """
     settings = Settings()                                    # canonical: ti=0, tf=260000, dt=5
-    # Legacy profile: explicit overrides for every Layer master now
+    # Legacy profile: explicit overrides for every feature flag now
     # default-ON (1.2.0+).
     pfaults = ProcessFaults(
         fouling_dynamic=False,
@@ -188,7 +188,7 @@ def test_default_fingerprint_unchanged_from_layer25_baseline() -> None:
         spectrum_enabled=False,
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    # Pinned by Layer 2.5 / Step 4 regression tests.
+    # Pinned by dynamic fouling / Step 4 regression tests.
     assert _fingerprint(res.sv) == "c8807b23b14a9ad1", (
         f"Default sv fingerprint drifted: {_fingerprint(res.sv)} != c8807b23b14a9ad1"
     )
@@ -200,9 +200,9 @@ def test_active_disturbance_produces_new_pinned_fingerprint() -> None:
     """When disturbance knobs are non-zero, the trajectory diverges from upstream.
     Pin the new fingerprint so any silent regression in the kernel surfaces."""
     settings = Settings()                                    # canonical baseline
-    # Legacy profile (21-component state) + active Layer 2.6 knobs.
-    # Explicit overrides for every Layer master now default-ON
-    # (1.2.0+) so this pin stays a clean Layer 2.6-only trajectory.
+    # Legacy profile (21-component state) + active external disturbances knobs.
+    # Explicit overrides for every feature flag now default-ON
+    # (1.2.0+) so this pin stays a clean external disturbances-only trajectory.
     pfaults = ProcessFaults(
         fouling_dynamic=False,
         quality_state=False,

@@ -132,14 +132,14 @@ class LiveSimulator:
         # original module) up to the point where the main loop starts.
         self._setup()
         self._last_published: dict[int, float] = {}    # sensor index → value (for stuck semantic)
-        # Layer 2.6b: single-slot mid-run override for the CW pressure
+        # cooling-water pump trip: single-slot mid-run override for the CW pressure
         # disturbance channel. None = no override (the kernel applies
         # the baseline sinusoidal profile only). Populated by a
         # ``cw_pump_trip`` handler (see faults.py) and cleared when
         # the trip expires. Single-slot matches ``power_dip``
         # semantics — a second trip replaces the first.
         self._disturbance_override: dict[str, Any] | None = None
-        # Layer 2.8: NIR/IR spectrum generator. Built once at
+        # NIR/IR spectrum sensor: NIR/IR spectrum generator. Built once at
         # construction so the reference spectra CSV is loaded lazily
         # only when the sensor is enabled. ``None`` when
         # ``pfaults.spectrum_enabled`` is False — saves the CSV read
@@ -172,12 +172,12 @@ class LiveSimulator:
         """
         self._setup()
         self._last_published.clear()
-        # Layer 2.6b: clear any active cw_pump_trip override so the
+        # cooling-water pump trip: clear any active cw_pump_trip override so the
         # next run starts from a clean disturbance state.
         self._disturbance_override = None
 
     # ------------------------------------------------------------------ #
-    # Operator actions (Roadmap Layer 2.5)
+    # Operator actions (Roadmap dynamic fouling)
     # ------------------------------------------------------------------ #
 
     def trigger_cleaning(self) -> dict[str, Any]:
@@ -203,7 +203,7 @@ class LiveSimulator:
         # Pore radius reset (always — this is the existing cleaning action).
         self._sv[i, 18] = self.p.rclean * 1e6
         changed["pore_radius_um"] = float(self._sv[i, 18])
-        # HEX fouling reset (Layer 2.5 — only when the state vector has the slot).
+        # HEX fouling reset (dynamic fouling — only when the state vector has the slot).
         if self._sv.shape[1] > 21:
             self._sv[i, 21] = self.p.alpha_clean
             changed["alpha"] = float(self._sv[i, 21])
@@ -213,7 +213,7 @@ class LiveSimulator:
         return changed
 
     # ------------------------------------------------------------------ #
-    # Operator actions (Roadmap Layer 2.7 — disturbance knobs)
+    # Operator actions (Roadmap operator disturbance knobs — disturbance knobs)
     # ------------------------------------------------------------------ #
     #
     # These four setters let the dashboard's disturbance panel ride
@@ -398,7 +398,7 @@ class LiveSimulator:
         return v
 
     # ------------------------------------------------------------------ #
-    # Operator actions (Roadmap Layer 2.4 — actuator degradation)
+    # Operator actions (Roadmap actuator wear — actuator degradation)
     # ------------------------------------------------------------------ #
     #
     # These three mutators let the dashboard demonstrate sudden wear
@@ -463,7 +463,7 @@ class LiveSimulator:
 
         Each entry exposes ``current`` (the live state value) and
         ``configured`` (the un-overridden initial value the sim was
-        built with). Returns an empty dict when both Layer 2.4 switches
+        built with). Returns an empty dict when both actuator wear switches
         are off.
         """
         out: dict[str, dict[str, float | None]] = {}
@@ -484,7 +484,7 @@ class LiveSimulator:
         return out
 
     # ------------------------------------------------------------------
-    # Layer 2.8b: windowed fouling mode (modes 4 / 5) mutators
+    # fouling-mode windows: windowed fouling mode (modes 4 / 5) mutators
     # ------------------------------------------------------------------
     def activate_fouling_mode_window(
         self,
@@ -492,13 +492,13 @@ class LiveSimulator:
         duration_s: float,
         seed: int | None = None,
     ) -> dict:
-        """Activate a windowed fouling-mode fault (Layer 2.8b).
+        """Activate a windowed fouling-mode fault (fouling-mode windows).
 
         During the window the kernel uses the
         :class:`~bdsim.fouling_modes.FoulingModeStepper` to produce
-        ``factor`` per step instead of the Layer 2.5 α path or the
+        ``factor`` per step instead of the dynamic fouling α path or the
         legacy pre-baked series. When the window expires control
-        returns to whichever path is higher priority (Layer 2.5
+        returns to whichever path is higher priority (dynamic fouling
         continuous α if enabled, else the static legacy series).
 
         Args:
@@ -767,22 +767,22 @@ class LiveSimulator:
         armax.eta[self._uindexAUTO] = 0.0
         armax.unoise_std[self._uindexAUTO] = 0.0
 
-        # Layer 2.5: HEX fouling α is in sv[21] only when the dynamic
+        # dynamic fouling: HEX fouling α is in sv[21] only when the dynamic
         # path is enabled. Legacy mode keeps the state vector at 21
         # components for byte-identical reproducibility.
         self._use_dynamic_alpha = pfaults.fouling_dynamic
         self._use_quality_state = pfaults.quality_state
         self._use_pump_wear = pfaults.pump_wear
         self._use_valve_wear = pfaults.valve_wear
-        # Forward Layer 2.4 kinetics overrides onto ``p`` so the
+        # Forward actuator wear kinetics overrides onto ``p`` so the
         # Numba kernel reads resolved values (per-hour → per-second,
-        # etc). Pattern matches Layer 2.5 / Layer 2.1.
+        # etc). Pattern matches dynamic fouling / quality latching.
         p.apply_layer24_overrides(pfaults)
 
-        # Layer 2.1: quality state adds 6 components when enabled.
-        # (set above alongside Layer 2.4 flags)
+        # quality latching: quality state adds 6 components when enabled.
+        # (set above alongside actuator wear flags)
 
-        # Layer 2.6: external disturbance track. Built once at setup,
+        # external disturbances: external disturbance track. Built once at setup,
         # referenced per-step to perturb u[] (Tmet, Toil, Qheat).
         # When all amplitudes are zero, this reduces to identity.
         self._pfaults = pfaults
@@ -825,9 +825,9 @@ class LiveSimulator:
         self._vpos = np.zeros((self._lt, len(vfaults.uindex)))
         self._vpos[0, :] = u0[vfaults.uindex - 1]
 
-        # Layer 2.5: HEX fouling α is in sv[21] only when the dynamic
+        # dynamic fouling: HEX fouling α is in sv[21] only when the dynamic
         # path is enabled. Legacy mode keeps the state vector at 21
-        # components for byte-identical reproducibility. Layer 2.1 adds
+        # components for byte-identical reproducibility. quality latching adds
         # 6 more components when enabled.
         sv_width = (
             len(settings.sv0)
@@ -847,9 +847,9 @@ class LiveSimulator:
             self._sv[0, 25] = p.ffa_ref
             self._sv[0, 26] = 0.01
             self._sv[0, 27] = p.iv_eq
-        # Layer 2.4: continuous-state slots land *after* whatever the
-        # legacy / Layer 2.5 / Layer 2.1 stack produces. ``layer24_base``
-        # gives the absolute index of the first Layer 2.4 slot;
+        # actuator wear: continuous-state slots land *after* whatever the
+        # legacy / dynamic fouling / quality latching stack produces. ``layer24_base``
+        # gives the absolute index of the first actuator wear slot;
         # pump_health lives at base+0, valve_stiction at base+1 (when
         # pump_wear is also enabled) or base+0 (when only valve_wear).
         self._layer24_base = (
@@ -887,7 +887,7 @@ class LiveSimulator:
                                        sfaults.signal, sfaults.a, sfaults.b)
         self._pvAUTO = self._pv[0, self._pvindexAUTO]
 
-        # t=0 quality sample (Layer 2.1) so the dashboard has a value
+        # t=0 quality sample (quality latching) so the dashboard has a value
         # before the first step completes.
         if self._use_quality_state:
             self._quality_latched[0, 0] = self._sv[0, 22] + self._pfaults.lab_noise_fame * np.random.randn()
@@ -900,13 +900,13 @@ class LiveSimulator:
         self._tclean: list[float] = []
         self._factor = _fouling(self._t, pfaults.fouling, pfaults.foulingpar)
 
-        # Layer 2.8b: per-step factor recording buffer. Populated by
+        # fouling-mode windows: per-step factor recording buffer. Populated by
         # the priority-aware selection block in ``_advance_one_step``
         # so callers / tests can inspect which path was active at
         # each step. Sized ``lt`` and indexed ``[i]`` (the end-of-step
         # factor that the kernel actually applied).
         self._factor_history = np.empty(self._lt, dtype=float)
-        # factor at t=0. With Layer 2.5 dynamic α the initial α is
+        # factor at t=0. With dynamic fouling dynamic α the initial α is
         # 0.05 → factor = 1/(1+0.05). Legacy mode: factor[0] = 1
         # (no fouling at t=0). Windowed mode is inactive at t=0 so
         # the legacy value applies.
@@ -915,13 +915,13 @@ class LiveSimulator:
         else:
             self._factor_history[0] = float(self._factor[0])
 
-        # Layer 2.8b: windowed five-mode fouling stepper. Lives
+        # fouling-mode windows: windowed five-mode fouling stepper. Lives
         # alongside the pre-baked legacy factor series; the kernel
         # picks one of three paths per step:
         #   1) continuous α  (sv[21] when fouling_dynamic=True)
         #   2) windowed mode 4/5  (this stepper, when active)
         #   3) static legacy factor[i]
-        # Priority is ``1 > 2 > 3`` per the Layer 2.8b plan.
+        # Priority is ``1 > 2 > 3`` per the fouling-mode windows plan.
         # The ARMAX RNG is seeded from ``pfaults.fouling_mode_active_seed``
         # (or from a fresh default_rng) so that scenario replays are
         # deterministic.
@@ -998,7 +998,7 @@ class LiveSimulator:
         self._u = u_new
         self._unoiseOLD = unoise
 
-        # Layer 2.6: external disturbance overlay. Same kernel as
+        # external disturbances: external disturbance overlay. Same kernel as
         # the batch path in simulation.py: Tmet tracks CW deviation,
         # Toil tracks ambient deviation, Qheat scales with CW
         # pressure. Skipped entirely when all amplitudes are zero
@@ -1013,21 +1013,21 @@ class LiveSimulator:
             or pfaults.live_ambient_amplitude_k is not None
             or pfaults.live_cw_t_mean_k is not None
             or pfaults.live_cw_p_drift_pa_per_h is not None
-            # Layer 2.4: pump_wear multiplies cw_p per-step so the
+            # actuator wear: pump_wear multiplies cw_p per-step so the
             # perturbation block must run even when the sinusoid /
             # drift / live knobs are all at zero. Symmetric with the
             # simulation.py driver.
             or pfaults.pump_wear
         ):
             amb, cw_t, cw_p = self._disturbance_track[i - 1, :]
-            # Layer 2.6b: apply cw_pump_trip override on top of the
+            # cooling-water pump trip: apply cw_pump_trip override on top of the
             # baseline CW pressure. The override is single-slot — a
             # second trip replaces the first. No-op when no override
             # is active or when the trip has expired.
             cw_p = self._apply_disturbance_override(
                 float(self._t[i - 1]), float(cw_p)
             )
-            # Layer 2.4: multiply cw_p by current pump_health (read
+            # actuator wear: multiply cw_p by current pump_health (read
             # from the previous step's state). pump_health ∈ [0, 1];
             # at 1.0 the multiplier is 1.0 and cw_p is unaffected.
             # This is the wear-side effect — the kernel evolves the
@@ -1035,7 +1035,7 @@ class LiveSimulator:
             # the Qheat scaling block sees a worn-pump cw_p.
             if pfaults.pump_wear:
                 cw_p = cw_p * float(self._sv[i - 1, self._pump_health_idx])
-            # Layer 2.7: resolve operator-driven knob overlays so
+            # operator disturbance knobs: resolve operator-driven knob overlays so
             # the deviation math uses the same resolved baseline as
             # the track did. Pull once, use locally.
             amb_mean_resolved = (
@@ -1083,9 +1083,9 @@ class LiveSimulator:
         uu = self._u.copy()
         uu[vfaults.uindex - 1] = self._vpos[i, :]
         self._rhs.set_u(uu)
-        # Layer 2.5 / 2.8b: factor selection with explicit priority:
-        #   1) continuous α (Layer 2.5) — when fouling_dynamic=True
-        #   2) windowed mode 4/5 (Layer 2.8b) — when fouling_mode_active
+        # dynamic fouling / fouling-mode windows: factor selection with explicit priority:
+        #   1) continuous α (dynamic fouling) — when fouling_dynamic=True
+        #   2) windowed mode 4/5 (fouling-mode windows) — when fouling_mode_active
         #   3) static legacy factor[i] — pre-baked series
         # Selection mirrors the simulation.py priority, so the live and
         # batch paths produce identical factor trajectories for any
@@ -1115,7 +1115,7 @@ class LiveSimulator:
         else:
             applied_factor = float(self._factor[i])
             self._rhs.set_factor(applied_factor)
-        # Layer 2.8b: record the applied factor so callers can inspect
+        # fouling-mode windows: record the applied factor so callers can inspect
         # which path (continuous α / windowed / static) the kernel
         # used for this step. Cheap (1 float per step).
         self._factor_history[i] = applied_factor
@@ -1128,12 +1128,12 @@ class LiveSimulator:
         else:
             self._sv[i, :] = sol.y[:, -1]
 
-        # Layer 2.5 post-integration handling of sv[21] (α) — only in
+        # dynamic fouling post-integration handling of sv[21] (α) — only in
         # dynamic mode. Legacy mode keeps the 21-component state.
         if self._use_dynamic_alpha:
             self._sv[i, 21] = float(np.clip(self._sv[i, 21], 0.0, 1.0))
 
-        # Layer 2.4: post-integration clamping on pump_health and
+        # actuator wear: post-integration clamping on pump_health and
         # valve_stiction_pct. Driver-side enforcement so we don't
         # accumulate numerical drift outside the operating envelope.
         if self._use_pump_wear:
@@ -1159,7 +1159,7 @@ class LiveSimulator:
             p.K4F = p.K4F + (8 * p.visco / np.pi) * var
             self._tclean.append(self._t[i])
 
-        # ----------------- quality state post-processing (Layer 2.1)
+        # ----------------- quality state post-processing (quality latching)
         if self._use_quality_state:
             self._sv[i, 22] = float(np.clip(self._sv[i, 22], 0.0, 100.0))
             self._sv[i, 23] = float(np.clip(self._sv[i, 23], 0.0, 5000.0))
@@ -1203,7 +1203,7 @@ class LiveSimulator:
             sp=self._sp[i, :].copy(),
             quality=quality,
             quality_latched=self._quality_latched[i, :].copy() if self._use_quality_state else None,
-            # Layer 2.6b: reflect any active cw_pump_trip override in
+            # cooling-water pump trip: reflect any active cw_pump_trip override in
             # the published disturbance column. The kernel above
             # already applied the override to ``self._u[4]`` for the
             # ODE step; here we update the published snapshot so the
@@ -1239,7 +1239,7 @@ class LiveSimulator:
             # snapshot so the surface matches the underlying state.
             t_here = float(self._t[i])
             row[2] = float(self._apply_disturbance_override(t_here, float(row[2])))
-        # Layer 2.4: pump_health multiplies the published PCW so
+        # actuator wear: pump_health multiplies the published PCW so
         # the dashboard surface reflects what the kernel saw. The
         # kernel applies the same factor on ``u[4]`` in the
         # perturbation block; we mirror it here so the snapshot
@@ -1264,7 +1264,7 @@ class LiveSimulator:
         ramp duration at both edges. The function is pure: same input
         always returns the same output, no side effects.
 
-        Layer 2.6b. See BDSIM_Layer26b_CW_Pump_Trip_Lane.md.
+        cooling-water pump trip. See bdsim.live_simulator.LiveSimulator._apply_disturbance_override.
         """
         ovr = self._disturbance_override
         if ovr is None or "channel" not in ovr or ovr["channel"] != "pcw":
@@ -1342,7 +1342,7 @@ class LiveSimulator:
         return {k: "good" for k in range(self.sensor_faults.nsensors)}
 
     # ------------------------------------------------------------------ #
-    # Layer 2.8: spectrum sampler (post-process, fired per spctr_t)
+    # NIR/IR spectrum sensor: spectrum sampler (post-process, fired per spctr_t)
     # ------------------------------------------------------------------ #
     def _maybe_sample_spectrum(self, i: int, t: float):
         """Fire the spectrum sensor at step ``i`` if cadence has elapsed.

@@ -121,10 +121,10 @@ def test_smoke_run():
     Uses ``fouling_dynamic=False`` so the legacy 21-component state
     vector is exercised — this is the regression path that should
     match the upstream baseline bit-for-bit. See ``test_smoke_run_dynamic``
-    for the new HEX-fouling dynamics (Roadmap Layer 2.5).
+    for the new HEX-fouling dynamics (Roadmap dynamic fouling).
     """
     from bdsim.config import Settings, ProcessFaults
-    # Legacy profile: explicit overrides for every Layer master now
+    # Legacy profile: explicit overrides for every feature flag now
     # default-ON (1.2.0+).
     pfaults = ProcessFaults(
         fouling_dynamic=False,
@@ -183,15 +183,15 @@ def test_smoke_run_with_seed_is_deterministic():
 
 
 def test_smoke_run_dynamic_22_state_components():
-    """Dynamic mode (Roadmap Layer 2.5) extends the state vector to 22.
+    """Dynamic mode (Roadmap dynamic fouling) extends the state vector to 22.
 
     sv[21] holds the HEX fouling factor α ∈ [0, 1]. At default operating
     conditions α grows slowly (Arrhenius accumulation vs. linear decay)
     — for a 10 000 s run we expect α > initial 0.05 and α < 0.5.
     """
     from bdsim.config import Settings, ProcessFaults
-    # Layer 2.5-only profile (22-component state). Explicit overrides
-    # for the other Layer masters default-ON as of 1.2.0+ so this test
+    # dynamic fouling-only profile (22-component state). Explicit overrides
+    # for the other feature flags default-ON as of 1.2.0+ so this test
     # stays a clean 22-component trajectory.
     pfaults = ProcessFaults(
         fouling_dynamic=True,
@@ -216,7 +216,7 @@ def test_smoke_run_dynamic_22_state_components():
 def test_smoke_run_dynamic_clamps_alpha_on_cleaning():
     """A cleaning event snaps α to alpha_clean (0.1) and clamps it in [0, 1]."""
     from bdsim.config import Settings, ProcessFaults
-    # Layer 2.5-only profile (22-component state).
+    # dynamic fouling-only profile (22-component state).
     pfaults = ProcessFaults(
         fouling_dynamic=True,
         quality_state=False,
@@ -236,7 +236,7 @@ def test_smoke_run_no_clogging():
     """With clogging disabled the filter radius stays constant."""
     from bdsim.config import ProcessFaults
     # Legacy profile (21-component state). Explicit overrides for the
-    # other Layer masters default-ON as of 1.2.0+ so the assertion on
+    # other feature flags default-ON as of 1.2.0+ so the assertion on
     # sv[:, 18] (filter pore radius) is unaffected by the wear / quality
     # slots.
     pfaults = ProcessFaults(

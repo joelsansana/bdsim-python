@@ -5,7 +5,7 @@ A Python port of the BDSIM MATLAB/Octave simulator by Natércia C. P. Fernandes
 (filter → reactor → heat exchanger → decanter → washer → dryer) with sensors,
 PID controllers, valve stiction, and a decanter split neural network.
 
-**Current version: 1.2.0** (`bdsim/__init__.py:__version__`, mirrored in `pyproject.toml`). See [`CHANGELOG.md`](CHANGELOG.md). A fingerprint bump always requires a version bump — see `AGENTS.md` for the rule. As of 1.2.0, the runtime default (`ProcessFaults()`) enables Layers 2.5 + 2.1 + 2.4 (both) + 2.8a — `sv` width 30. The legacy 21-wide and Layer 2.5 22-wide profiles remain canonical but require explicit `False` overrides.
+**Current version: 1.2.0** (`bdsim/__init__.py:__version__`, mirrored in `pyproject.toml`). See [`CHANGELOG.md`](CHANGELOG.md). A fingerprint bump always requires a version bump — see `AGENTS.md` for the rule. As of 1.2.0, the runtime default (`ProcessFaults()`) enables dynamic fouling, quality latching, pump + valve wear, and the NIR/IR spectrum sensor — `sv` width 30. The legacy 21-wide and dynamic fouling 22-wide profiles remain canonical but require explicit `False` overrides.
 
 The port is faithful to the MATLAB semantics and uses modern Python idioms:
 
@@ -21,7 +21,7 @@ The port is faithful to the MATLAB semantics and uses modern Python idioms:
 **Fingerprint-aligned (contributors / pin tests)** — uses committed `uv.lock`:
 
 ```bash
-uv python install 3.10          # if needed; 3.10 is the 1.1.1 pin reference
+uv python install 3.10          # if needed; 3.10 is the 1.2.0 pin reference
 uv sync --extra test
 uv run python -c "import numpy,scipy,numba; print(numpy.__version__, scipy.__version__, numba.__version__)"
 # expect on 3.10: 2.2.6 1.15.3 0.66.0
@@ -51,6 +51,20 @@ by default. CSV column headers match the upstream `BDsim.m` byte-for-byte
 so existing MATLAB plotting code can consume them unchanged. Open
 `results/index.html` in any browser to see all nine figures.
 
+## Documentation
+
+| Doc | Purpose |
+|-----|---------|
+| [USER.md](USER.md) | On-ramp for developers / researchers; recipes for common tasks |
+| [ADMIN.md](ADMIN.md) | Install, packaging, fingerprint-aligned env, health checks |
+| [AGENTS.md](AGENTS.md) | Agent hard rules, dev workflow, fingerprint profiles |
+| [docs/Home.md](docs/Home.md) | Knowledge vault (plant, math, engine) |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to add a knob, bump a fingerprint, open a PR |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Community standards |
+| [SECURITY.md](SECURITY.md) | How to report vulnerabilities privately |
+| [CHANGELOG.md](CHANGELOG.md) | Release history and pinned-profile announcements |
+| [CITATION.cff](CITATION.cff) | How to cite |
+
 ## Programmatic use
 
 ```python
@@ -58,7 +72,7 @@ from bdsim import run, run_with
 from bdsim.config import ProcessFaults
 import numpy as np
 
-# Runtime default: fouling_dynamic=True → sv width 22 (Layer 2.5 α at sv[21])
+# Runtime default: fouling_dynamic=True → sv width 22 (dynamic fouling α at sv[21])
 res = run(seed=42)
 print(res.t.shape, res.sv.shape)         # (51999,) (51999, 22)
 
@@ -68,14 +82,14 @@ res_legacy = run_with(
     seed=42,
 )
 
-# Custom faults: turn clogging off (still Layer 2.5 on unless you override)
+# Custom faults: turn clogging off (still dynamic fouling on unless you override)
 res = run_with(
     pfaults=ProcessFaults(clog_fraction=0.0, fouling=0),
     seed=42,
 )
 ```
 
-`ProcessFaults()` is the **runtime default** — as of 1.2.0 it enables Layers 2.5 + 2.1 + 2.4 (pump + valve wear) + 2.8a. The **legacy fingerprint** suite uses an explicit all-False profile, and the **Layer 2.5** suite uses `fouling_dynamic=True` with everything else `False` — see [`docs/00-orientation/Byte-identical-contract.md`](docs/00-orientation/Byte-identical-contract.md) and [`AGENTS.md`](AGENTS.md).
+`ProcessFaults()` is the **runtime default** — as of 1.2.0 it enables dynamic fouling, quality latching, pump + valve wear, and the NIR/IR spectrum sensor. The **legacy fingerprint** suite uses an explicit all-False profile, and the **dynamic fouling** suite uses `fouling_dynamic=True` with everything else `False` — see [`docs/00-orientation/Byte-identical-contract.md`](docs/00-orientation/Byte-identical-contract.md) and [`AGENTS.md`](AGENTS.md).
 
 ## Files
 
@@ -87,10 +101,10 @@ bdsim/
 ├── kinetics.py         # rxrates (transesterification kinetics)
 ├── split_nn.py         # DecanterSplitNet (PyTorch MLP) + numpy split()
 ├── ode.py              # ODEmodel, AEmodel
-├── spectra.py          # Layer 2.8 NIR/IR virtual spectrum sensor (comp_spectrum)
+├── spectra.py          # NIR/IR virtual spectrum sensor (comp_spectrum)
 ├── data/
 │   └── spectra_ref.csv # 6 species × 631 NIR channels, GPL-3 (Fernandes/Strelet 2019)
-├── fouling_modes.py    # Layer 2.8b: five-mode fouling factor stepper
+├── fouling_modes.py    # fouling-mode windows: five-mode fouling factor stepper
 ├── simulation.py       # run, run_with — the main driver
 ├── live_simulator.py   # LiveSimulator — per-step driver for the dashboard
 ├── plots.py            # 9-figure Plotly block + CSV writer
@@ -98,13 +112,13 @@ bdsim/
 tests/
 ├── test_smoke.py             # smoke tests (run with `pytest`)
 ├── test_live_simulator.py    # LiveSimulator + byte-identical contract to run_with
-├── test_disturbances.py      # Layer 2.6 external disturbance track
-├── test_layer24_degradation.py # Layer 2.4 pump_health + valve_stiction_pct
-├── test_layer26b_cw_pump.py  # Layer 2.6b cw_pump_trip mid-run override
-├── test_layer27_knobs.py     # Layer 2.7 operator-driven disturbance knobs
-├── test_layer28a_spectra.py  # Layer 2.8 NIR/IR spectrum sensor
-├── test_layer28b_fouling_modes.py # Layer 2.8b fouling stepper (offline)
-└── test_layer28b_live_fouling.py  # Layer 2.8b LiveSimulator wiring + priority
+├── test_disturbances.py       # external disturbances track
+├── test_actuator_wear.py      # pump_health + valve_stiction_pct continuous-state dynamics
+├── test_cw_pump_trip.py       # cooling-water pump trip mid-run override
+├── test_operator_knobs.py     # operator-driven disturbance knobs
+├── test_spectrum_sensor.py    # NIR/IR virtual spectrum sensor
+├── test_fouling_modes.py      # five-mode fouling stepper (offline)
+└── test_fouling_modes_live.py # LiveSimulator wiring + priority for fouling-mode windows
 results/                # default output directory (created on first run)
 ```
 
@@ -151,7 +165,7 @@ for:
 - **Control-loop tuning and PID studies.** Sweep `Settings.live_sp1..4`, watch
   the controller chase them, and inspect the 9 standard figures.
 - **Fault-detection / anomaly-detection R&D.** Inject sensor bias, dropout,
-  or stuck-at faults via `SensorFaults`, or run the Layer 2.4 pump/valve
+  or stuck-at faults via `SensorFaults`, or run the actuator wear pump/valve
   degradation paths, then train statistical or ML models on the trajectories.
 - **Operator training and scenario rehearsal.** Drive the sim live via
   `LiveSimulator` or the companion [`bdsim-dashboard`](https://github.com/joelsansana/bdsim-dashboard)
@@ -168,7 +182,7 @@ Issues and pull requests are welcome. Before opening a PR, please:
    fingerprint-regression contract.
 2. **Don't change the ODE math without a failing test first.** The Numba-JIT
    kernels pin a SHA-256 fingerprint per profile (`tests/test_live_simulator.py`
-   and the per-Layer test files; `tests/test_smoke.py` checks shapes and
+   and the per-feature test files; `tests/test_smoke.py` checks shapes and
    determinism only — no SHA pins). Any numerical change updates the pin and
    must be called out in the PR description.
 3. **Don't add a new top-level dependency without asking.** The current stack

@@ -49,7 +49,7 @@ def test_run_to_completion_matches_run_with_byte_for_byte() -> None:
     """
     from bdsim.config import ProcessFaults
     settings = _make_short_settings()
-    # Legacy profile (21-component state, no Layer 2.1 / 2.4 / 2.8a).
+    # Legacy profile (21-component state, no quality latching / actuator wear / 2.8a).
     pfaults = ProcessFaults(
         fouling_dynamic=False,
         quality_state=False,
@@ -86,7 +86,7 @@ def test_run_with_long_horizon_matches_live() -> None:
     fingerprint hashes. Exercises the **legacy** HEX fouling path.
     """
     from bdsim.config import ProcessFaults
-    # Legacy profile (21-component state, no Layer 2.1 / 2.4 / 2.8a).
+    # Legacy profile (21-component state, no quality latching / actuator wear / 2.8a).
     pfaults = ProcessFaults(
         fouling_dynamic=False,
         quality_state=False,
@@ -111,14 +111,14 @@ def test_fingerprint_hashes_match_baseline() -> None:
     This test exercises the **legacy** path (``fouling_dynamic=False``)
     which must remain byte-identical to the upstream MATLAB numbers.
     See ``test_fingerprint_hashes_dynamic_mode`` for the new
-    HEX-fouling (Layer 2.5) baseline.
+    HEX-fouling (dynamic fouling) baseline.
     """
     import hashlib
 
     from bdsim.config import ProcessFaults
-    # Legacy profile: explicit overrides for every Layer master now
+    # Legacy profile: explicit overrides for every feature flag now
     # default-ON (1.2.0+). Without these, this test would run with
-    # Layer 2.1 + Layer 2.4 + Layer 2.8a on, which is not the legacy
+    # quality latching + actuator wear + NIR/IR spectrum sensor on, which is not the legacy
     # 21-component trajectory.
     pfaults = ProcessFaults(
         fouling_dynamic=False,
@@ -144,7 +144,7 @@ def test_fingerprint_hashes_match_baseline() -> None:
 
 
 def test_fingerprint_hashes_dynamic_mode() -> None:
-    """Dynamic HEX-fouling mode (Layer 2.5) has its own fingerprint.
+    """Dynamic HEX-fouling mode (dynamic fouling) has its own fingerprint.
 
     Captured 2026-07-01 when the layer landed. Drift here signals a
     real change in the Arrhenius dynamics — bumping this baseline is a
@@ -153,8 +153,8 @@ def test_fingerprint_hashes_dynamic_mode() -> None:
     import hashlib
 
     from bdsim.config import ProcessFaults
-    # Layer 2.5-only profile: explicit overrides for every other Layer
-    # master (1.2.0+ defaults would otherwise turn on Layers 2.1, 2.4,
+    # dynamic fouling-only profile: explicit overrides for every other feature flag
+    # master (1.2.0+ defaults would otherwise turn on quality latching and actuator wear,
     # and 2.8a, breaking this pin's intended 22-component trajectory).
     pfaults = ProcessFaults(
         fouling_dynamic=True,
@@ -186,9 +186,9 @@ def test_fingerprint_hashes_dynamic_mode() -> None:
 
 def test_step_returns_step_result_with_correct_shapes() -> None:
     settings = _make_short_settings()
-    # Bare ProcessFaults() now enables Layers 2.1, 2.4 (pump + valve),
-    # and 2.8a; the resulting sv width is 21 + 1 (Layer 2.5) + 6
-    # (Layer 2.1) + 1 (pump) + 1 (valve) = 30.
+    # Bare ProcessFaults() now enables quality latching and actuator wear (pump + valve),
+    # and 2.8a; the resulting sv width is 21 + 1 (dynamic fouling) + 6
+    # (quality latching) + 1 (pump) + 1 (valve) = 30.
     sim = LiveSimulator(settings=settings, seed=42)
 
     first = sim.step()
@@ -263,7 +263,7 @@ def test_reset_rewinds_to_t0() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Operator actions (Roadmap Layer 2.5)
+# Operator actions (Roadmap dynamic fouling)
 # ---------------------------------------------------------------------------
 
 
@@ -275,8 +275,8 @@ def test_trigger_cleaning_dynamic_mode_snaps_alpha_to_alpha_clean() -> None:
     """
     from bdsim.config import ProcessFaults
     settings = _make_short_settings()
-    # Layer 2.5-only (22-component state). Explicit overrides for the
-    # other Layer masters so the 22-wide assertion below still holds
+    # dynamic fouling-only (22-component state). Explicit overrides for the
+    # other feature flags so the 22-wide assertion below still holds
     # under the 1.2.0+ broader defaults.
     pfaults = ProcessFaults(
         fouling_dynamic=True,
@@ -310,7 +310,7 @@ def test_trigger_cleaning_legacy_mode_skips_alpha() -> None:
     """Legacy 21-wide state has no α slot; cleaning only resets pore radius."""
     from bdsim.config import ProcessFaults
     settings = _make_short_settings()
-    # Legacy 21-component state. Explicit overrides for the other Layer
+    # Legacy 21-component state. Explicit overrides for the other feature flag
     # masters so the 21-wide assertion below still holds under the
     # 1.2.0+ broader defaults.
     pfaults = ProcessFaults(
