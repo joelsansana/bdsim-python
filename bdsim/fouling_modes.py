@@ -1,4 +1,4 @@
-"""Layer 2.8b: five-mode fouling stepper (port of upstream ``fouling.m``).
+"""fouling-mode windows: five-mode fouling stepper (port of upstream ``fouling.m``).
 
 This module is the Python port of Fernandes 2019 / Strelet Dec 2019
 ``fouling.m`` from the BDSIM_spectr reference distribution. It exposes a
@@ -7,19 +7,19 @@ This module is the Python port of Fernandes 2019 / Strelet Dec 2019
 variables, which is unsafe for multi-instance or restart scenarios. Our
 port makes this state explicit and bounded.
 
-Three layers cooperate to produce the heat-exchanger efficiency factor
+Three paths cooperate to produce the heat-exchanger efficiency factor
 used in the energy balance ``Theat = TR - factor * Qheat / (NR * cpmolR)``:
 
-  1. **Layer 2.5** (continuous α) — when ``pfaults.fouling_dynamic=True``
+  1. **dynamic fouling** (continuous α) — when ``pfaults.fouling_dynamic=True``
      the state vector carries ``sv[21]`` (α ∈ [0, 1]) and ``factor``
      follows the dynamics. This is the "physics-based slow fouling"
      story.
-  2. **Layer 2.8b (this module, windowed modes 4/5)** — during an active
+  2. **fouling-mode windows (this module, windowed modes 4/5)** — during an active
      fault event the stepper overrides ``factor`` with the ARMAX-mode
      output. This is the "fast, stochastic, fault-injection" story:
      intermittent feedstock-impurity spikes that look like ARMAX noise
      to a downstream correlation engine.
-  3. **Layer 2.5 fallback (static)** — when neither above applies,
+  3. **dynamic fouling fallback (static)** — when neither above applies,
      ``factor = 1 / (1 + foulingpar * t)`` (the legacy pre-baked
      series) is used.
 
@@ -42,7 +42,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Optional
 
 import numpy as np
 
@@ -117,7 +116,7 @@ class FoulingModeStepper:
         t: float,
         mode: int | FoulingMode,
         xRG: float = 0.0,
-        rng: Optional[np.random.Generator] = None,
+        rng: np.random.Generator | None = None,
     ) -> tuple[float, float]:
         """Advance the stepper one tick.
 

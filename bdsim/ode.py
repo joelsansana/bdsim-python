@@ -39,7 +39,6 @@ from numba import njit
 
 from .split_nn import split
 
-
 # -----------------------------------------------------------------------------
 # JIT-friendly parameter pack (replaces the Python-side Parameters dataclass
 # inside the JIT hot path)
@@ -100,17 +99,17 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
                  kvo: float, tauvo: float,
                  kvH: float, tauvH: float, NHmax: float,
                  eta_E: float, eta_M: float, eta_G: float,
-                 # ---- HEX fouling dynamics (Roadmap Layer 2.5) ----
+                 # ---- HEX fouling dynamics (Roadmap dynamic fouling) ----
                  k_f0: float, E_a_f: float, k_decay: float,
                  ffa_ref: float, alpha_clean: float,
                  use_dynamic_alpha: bool,
-                 # ---- Quality dynamics (Roadmap Layer 2.1) ----
+                 # ---- Quality dynamics (Roadmap quality latching) ----
                  k_fame: float, k_water: float, k_iv: float,
                  fame_eq: float, water_eq: float, iv_eq: float,
                  ffa_feed_noise: float, water_feed_noise: float,
                  iv_feed_noise: float,
                  use_quality_state: bool,
-                 # ---- Actuator degradation (Roadmap Layer 2.4) ----
+                 # ---- Actuator degradation (Roadmap actuator wear) ----
                  k_pump_wear: float, p_pump_wear: float,
                  pump_health_floor: float,
                  k_valve_stiction: float, valve_stiction_ceiling: float,
@@ -121,18 +120,18 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
     ``eta_G``) are passed as plain floats — the network itself is evaluated
     by the Python driver before each call (see :func:`make_rhs`).
 
-    Layer 2.5: ``sv[21]`` carries the HEX fouling factor α ∈ [0, 1].
+    dynamic fouling: ``sv[21]`` carries the HEX fouling factor α ∈ [0, 1].
     When ``use_dynamic_alpha=True`` the driver writes α back into
     ``factor`` so this RHS uses the live state; otherwise the
     pre-baked ``factor`` argument (legacy path) is used as before.
 
-    Layer 2.1: when ``use_quality_state=True``, sv[22:28] carries
+    quality latching: when ``use_quality_state=True``, sv[22:28] carries
     true instantaneous quality (FAME%, water, IV) and feedstock
     quality (FFA_feed, water_feed, IV_feed). Each relaxes toward an
     equilibrium at first-order; feedstock states evolve by a small
     per-step random walk.
 
-    Layer 2.4: when ``use_pump_wear=True``, sv[22] carries
+    actuator wear: when ``use_pump_wear=True``, sv[22] carries
     ``pump_health ∈ [0, 1]`` (continuous impeller wear). When
     ``use_valve_wear=True``, sv[23] carries
     ``valve_stiction_pct ∈ [0, 100]`` (continuous stiction buildup).
@@ -144,8 +143,8 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
     nc = 6
     # NOTE: dsvdt is sized to match the working state vector. Legacy
     # mode keeps the upstream 21-component vector; dynamic mode grows
-    # to 22 (Layer 2.5); quality mode grows to 27 (Layer 2.1 adds 6
-    # on top of the legacy 21); Layer 2.4 adds 1 (pump) and 1 (valve)
+    # to 22 (dynamic fouling); quality mode grows to 27 (quality latching adds 6
+    # on top of the legacy 21); actuator wear adds 1 (pump) and 1 (valve)
     # on top of whatever else is enabled. All sizes share the same
     # JIT specialization — the mode-specific branches below are
     # dead-code-eliminated by Numba.
@@ -157,7 +156,7 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
         + (1 if use_valve_wear else 0)
     )
 
-    # Layer 2.4 slot indices. Compute once here so the dynamics
+    # actuator wear slot indices. Compute once here so the dynamics
     # blocks below write into the correct row regardless of which
     # other layers are enabled. Pump always lands before valve when
     # both are on (matches the driver-side convention).
@@ -173,12 +172,12 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
         else -1
     )
 
-    # Layer 2.4: resolve effective valve gains under stiction. A
+    # actuator wear: resolve effective valve gains under stiction. A
     # stiction of 0 % leaves kv unchanged; 60 % (the ceiling) cuts
     # kv to 40 % of nominal. We pre-compute once per RHS call so the
     # valve derivative below uses the resolved values.
     if use_valve_wear:
-        # Layer 2.4: stiction slot index depends on which other
+        # actuator wear: stiction slot index depends on which other
         # modes are enabled. ``stiction_slot`` was computed at the
         # top of this function. When pump_wear is off the slot is
         # at ``layer24_base_local`` (no +1 offset for pump).
@@ -299,7 +298,7 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
     cpmolL = (cpmol[0] * xL0 + cpmol[1] * xL1 + cpmol[2] * xL2 +
               cpmol[3] * xL3 + cpmol[4] * xL4 + cpmol[5] * xL5)
     cpmolH = (cpmol[3] * xH3 + cpmol[4] * xH4 + cpmol[5] * xH5)
-    dTD = NR * cpmolR / ((nL * cpmolL + nH * cpmolH)) * (Theat - TD)
+    dTD = NR * cpmolR / (nL * cpmolL + nH * cpmolH) * (Theat - TD)
 
     # ------------------- Valves
     vinputo = u[0]
@@ -330,7 +329,7 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
     dsvdt[19] = dlifto
     dsvdt[20] = dliftH
 
-    # ------------------- HEX fouling factor α (Layer 2.5)
+    # ------------------- HEX fouling factor α (dynamic fouling)
     # Two-term dynamics:
     #   accumulation: k_f0 * (FFA factor) * exp(-E_a_f / (R * TR))
     #   decay:        k_decay * α
@@ -358,7 +357,7 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
         # directly post-integration.
         dsvdt[21] = 0.0
 
-    # ------------------- Quality state (Layer 2.1)
+    # ------------------- Quality state (quality latching)
     # First-order relaxation of true instantaneous quality toward
     # equilibrium driven by feedstock and operating conditions.
     # Feedstock evolves as a slow random walk (small per-step noise
@@ -392,7 +391,7 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
         dsvdt[26] = 0.0
         dsvdt[27] = 0.0
 
-    # ------------------- Pump & valve degradation (Layer 2.4)
+    # ------------------- Pump & valve degradation (actuator wear)
     # ``pump_health`` walks down at a rate that scales with the
     # current cooling-water flow proxy (we use |Fmet| as a cheap
     # proxy: more methanol flow → higher duty → faster wear). The
@@ -503,16 +502,16 @@ def ODEmodel(t: float, sv: np.ndarray, p: dict, u: np.ndarray,
         p.kvo, p.tauvo,
         p.kvH, p.tauvH, p.NHmax,
         eta[0], eta[1], eta[2],
-        # HEX fouling dynamics (Layer 2.5)
+        # HEX fouling dynamics (dynamic fouling)
         p.k_f0, p.E_a_f, p.k_decay,
         p.ffa_ref, p.alpha_clean,
         use_dynamic_alpha,
-        # Quality dynamics (Layer 2.1)
+        # Quality dynamics (quality latching)
         p.k_fame, p.k_water, p.k_iv,
         p.fame_eq, p.water_eq, p.iv_eq,
         p.ffa_feed_noise, p.water_feed_noise, p.iv_feed_noise,
         use_quality_state,
-        # Actuator degradation dynamics (Layer 2.4)
+        # Actuator degradation dynamics (actuator wear)
         p.k_pump_wear, p.p_pump_wear, p.pump_health_floor,
         p.k_valve_stiction, p.valve_stiction_ceiling,
         use_pump_wear, use_valve_wear,
@@ -538,20 +537,20 @@ def make_rhs(p, use_dynamic_alpha: bool = True, use_quality_state: bool = True,
     before each integration interval. The closure signature matches the
     scipy convention ``f(t, sv) -> dsv/dt``.
 
-    ``use_dynamic_alpha`` toggles Layer 2.5 fouling dynamics (default
+    ``use_dynamic_alpha`` toggles dynamic fouling dynamics (default
     True). Pass False for bit-identical behaviour to the legacy
     pre-baked ``factor`` series.
 
-    ``use_quality_state`` toggles Layer 2.1 quality-state dynamics
+    ``use_quality_state`` toggles quality latching quality-state dynamics
     (default True). Pass False to keep the state at 22 components
-    (Layer 2.5 only).
+    (dynamic fouling only).
 
-    ``use_pump_wear`` toggles Layer 2.4 pump degradation dynamics
+    ``use_pump_wear`` toggles actuator wear pump degradation dynamics
     (default False). Adds one continuous state slot (sv[22]) for
     ``pump_health ∈ [0, 1]`` and applies it as a multiplier on the
     CW pressure nominal.
 
-    ``use_valve_wear`` toggles Layer 2.4 valve stiction dynamics
+    ``use_valve_wear`` toggles actuator wear valve stiction dynamics
     (default False). Adds one continuous state slot (sv[23]) for
     ``valve_stiction_pct ∈ [0, 100]`` and reduces the effective
     valve gains ``kvo``, ``kvH`` proportionally.

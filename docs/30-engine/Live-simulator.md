@@ -9,7 +9,7 @@ Module: `bdsim/live_simulator.py`. Class: `LiveSimulator`. Per-step payload: `St
 
 ## Role
 
-Stateful driver for **bdsim-dashboard**: one `step()` advances one `dt`, returns sensors/state for MQTT/HTTP. Same plant math as [[Batch-driver]] when knobs match; live path has its own fingerprint pins.
+Stateful driver for **bdsim-dashboard**: one `step()` advances one `dt`, returns sensors/state for MQTT/HTTP. Same plant math as [Batch-driver](../30-engine/Batch-driver.md) when knobs match; live path has its own fingerprint pins.
 
 ## Lifecycle
 
@@ -40,12 +40,12 @@ while not sim.done:
 ## Live-only capabilities
 
 - Mutate `sensor_faults` between steps (bias / stuck / dropouts)
-- Layer 2.6b CW pump trip / disturbance overlays
-- Layer 2.7 operator knobs (`live_*` fields on `ProcessFaults`)
-- Layer 2.8 spectra attached on fire times (`StepResult.spectra`)
-- `activate_fouling_mode_window` for Layer 2.8b
+- cooling-water pump trip CW pump trip / disturbance overlays
+- Operator disturbance knobs (`live_*` fields on `ProcessFaults`)
+- NIR/IR spectrum sensor spectra attached on fire times (`StepResult.spectra`)
+- `activate_fouling_mode_window` for fouling-mode windows
 
 > [!tip]
 > Prefer first-class methods over private `_` attributes when extending the live API. See [`USER.md`](../../USER.md) for current patterns.
 
-Related: [[Batch-driver]], [[Config-surface]], [[Sensors-and-control]], [[Layers-roadmap]]
+Related: [Batch-driver](../30-engine/Batch-driver.md), [Config-surface](../30-engine/Config-surface.md), [Sensors-and-control](../10-plant/Sensors-and-control.md), [Config-surface](../30-engine/Config-surface.md)

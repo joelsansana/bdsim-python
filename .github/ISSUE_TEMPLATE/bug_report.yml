@@ -1,0 +1,80 @@
+name: Bug report
+description: Something in bdsim doesn't behave as documented.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please fill in what you observed vs. what
+        you expected. Include enough detail (config snippet + sim settings) to
+        reproduce.
+
+        For **security** issues, see [SECURITY.md](../SECURITY.md) instead —
+        do not file them publicly.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      placeholder: |
+        Describe the bug. Include a minimal `run_with(...)` or
+        `LiveSimulator(...)` snippet that reproduces the issue.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      placeholder: |
+        Describe the expected behaviour (cite docs / equations / paper).
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: bdsim version
+      placeholder: "1.2.0"
+    validations:
+      required: true
+
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+      placeholder: "3.10.x"
+    validations:
+      required: true
+
+  - type: input
+    id: stack
+    attributes:
+      label: numpy / scipy / numba versions
+      placeholder: "2.2.6 / 1.15.3 / 0.66.0"
+    validations:
+      required: true
+
+  - type: input
+    id: seed
+    attributes:
+      label: Random seed used (if any)
+      placeholder: "42"
+
+  - type: textarea
+    id: fingerprint
+    attributes:
+      label: Trajectory fingerprint (if applicable)
+      placeholder: |
+        Paste the truncated SHA-256 of the affected trajectory array
+        (`sv`, `pv`, `uv`). Compare to the pinned value in `tests/` and
+        `docs/00-orientation/Byte-identical-contract.md`.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / stack trace
+      placeholder: |
+        Paste the full error output, including the Numba JIT traceback if
+        one is present.

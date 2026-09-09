@@ -11,9 +11,9 @@ All typed knobs live in `bdsim/config.py`. Public re-exports: `bdsim/__init__.py
 
 | Type | Role |
 |------|------|
-| `Parameters` | Physical constants, kinetics packs, Layer rate constants |
+| `Parameters` | Physical constants, kinetics packs, feature rate constants |
 | `Settings` | Horizon `ti/tf/dt`, `sv0`/`u0`, loop wiring, setpoints, disturbance profiles |
-| `ProcessFaults` | Process / Layer feature gates and amplitudes |
+| `ProcessFaults` | Process feature gates and amplitudes |
 | `SensorFaults` | Noise, bias templates; live bias/stuck/dropouts |
 | `ValveFaults` | Stiction `S`, `J` per valve |
 | `ARMAX` | Input disturbance ARMAX coeffs |
@@ -23,15 +23,15 @@ All typed knobs live in `bdsim/config.py`. Public re-exports: `bdsim/__init__.py
 ## ProcessFaults field table
 
 Defaults shown are exactly what `ProcessFaults()` produces as of 1.2.0
-(many masters default to **`True`** — see footnote).
+(many feature flags default to **`True`** — see footnote).
 
-| Layer | Field | Type | Default | Purpose |
+| Feature | Field | Type | Default | Purpose |
 |-------|-------|------|---------|---------|
 | (legacy) | `clog_fraction` | `float` | `5.95e-7` | filter clogging rate constant |
 | (legacy) | `DPclean` | `float` | `1e5` | clean-filter ΔP (Pa) |
 | (legacy) | `filter_std` | `float` | `5e-15` | filter pore-radius std |
 | (legacy) | `ratio_robs_r` | `float` | `0.9` | side-reaction deactivation factor |
-| (legacy) | `fouling` | `int` | `1` | 0 = off, 1 = on (pre-Layer 2.5 series) |
+| (legacy) | `fouling` | `int` | `1` | 0 = off, 1 = on (pre-dynamic fouling series) |
 | (legacy) | `foulingpar` | `np.ndarray` | `[3e-7]` | fouling rate parameter |
 | **2.5** | `fouling_dynamic` | `bool` | **`True`** | α evolves as an ODE state; turn off for legacy fingerprint |
 | **2.1** | `quality_state` | `bool` | **`True`** | master switch — adds 6 sv slots, latched QA channels; turn off for legacy fingerprint |
@@ -89,10 +89,10 @@ Defaults shown are exactly what `ProcessFaults()` produces as of 1.2.0
 | **2.8b** | `fouling_mode_active_seed` | `int \| None` | `None` | optional seed for ARMAX RNG (reproducibility) |
 
 > [!note]
-> **Default on (1.2.0+):** Layers 2.5 (fouling), 2.1 (quality), 2.4 (pump + valve wear), and 2.8a (spectra) all default to **on**. Bare `ProcessFaults()` enables them all → `sv` width 30, hash `691cf51b…`. Tests and demos that need a narrower state vector must pass the relevant `False` overrides explicitly. Named profiles: [[Byte-identical-contract#Canonical profiles]].
+> **Default on (1.2.0+):** dynamic fouling, quality latching, pump + valve wear, and the NIR/IR spectrum sensor all default to **on**. Bare `ProcessFaults()` enables them all → `sv` width 30, hash `691cf51b…`. Tests and demos that need a narrower state vector must pass the relevant `False` overrides explicitly. Named profiles: [Byte-identical-contract](../00-orientation/Byte-identical-contract.md#canonical-profiles).
 
 ## Settings horizon
 
 Default ~72 h: `tf=260000`, `dt=5` → ~52k samples (drivers drop the last point like upstream).
 
-Related: [[Layers-roadmap]], [[Channel-indices]], [[Batch-driver]], [[Live-simulator]], [[Home]]
+Related: [Config-surface](../30-engine/Config-surface.md), [Channel-indices](../40-helpers/Channel-indices.md), [Batch-driver](../30-engine/Batch-driver.md), [Live-simulator](../30-engine/Live-simulator.md), [Home](../Home.md)

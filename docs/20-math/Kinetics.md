@@ -5,7 +5,7 @@ aliases: [rxrates, Transesterification]
 
 # Kinetics
 
-Module: `bdsim/kinetics.py` (`rxrates`). JIT mirror inside [[ODE-and-AE]].
+Module: `bdsim/kinetics.py` (`rxrates`). JIT mirror inside [ODE-and-AE](../20-math/ODE-and-AE.md).
 
 ## Reaction network
 
@@ -42,6 +42,6 @@ rx_DG =  r0 - r1
 rx_E  =  r0 + r1 + r2
 ```
 
-Side-reaction deactivation scales pre-exponentials via [[Thermo|`side_reactions`]] (`ratio_robs_r` in `ProcessFaults`).
+Side-reaction deactivation scales pre-exponentials via [`side_reactions`](../20-math/Thermo.md) (`ratio_robs_r` in `ProcessFaults`).
 
-Related: [[Units-and-streams]], [[ODE-and-AE]], [[Thermo]], [[Acronyms]]
+Related: [Units-and-streams](../10-plant/Units-and-streams.md), [ODE-and-AE](../20-math/ODE-and-AE.md), [Thermo](../20-math/Thermo.md), [Acronyms](../Acronyms.md)

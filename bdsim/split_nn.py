@@ -17,8 +17,7 @@ from __future__ import annotations
 
 import numpy as np
 import torch
-import torch.nn as nn
-
+from torch import nn
 
 # Hardcoded weights and biases from split.m (numerically faithful port)
 _MN = np.array([0.4429080932784634, 0.1430123456790114, 315.4873799725652])

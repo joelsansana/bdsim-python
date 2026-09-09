@@ -19,7 +19,6 @@ from plotly.subplots import make_subplots
 
 from .config import Results
 
-
 # Column headers taken verbatim from upstream BDsim.m
 _INPUT_HEADER = (
     "% t/s  order_lift_oil/%  Tmet/C  Fmet/(kg/h)  Toil/C  Qheat/W  "
@@ -349,8 +348,10 @@ def _save_index(figures: list[tuple[str, go.Figure]], path: Path) -> None:
         "h2{margin-top:24px;color:#333;}</style>",
         "</head><body>",
         "<h1>bdsim — biodiesel plant simulation results</h1>",
-        f"<p>Generated from a {len(figures)}-figure Plotly block. "
-        "Each figure is also saved as a standalone HTML file in this folder.</p>",
+        (
+            f"<p>Generated from a {len(figures)}-figure Plotly block. "
+            "Each figure is also saved as a standalone HTML file in this folder.</p>"
+        ),
     ]
     for name, fig in figures:
         parts.append('<div class="fig">')

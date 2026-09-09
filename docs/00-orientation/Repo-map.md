@@ -17,17 +17,17 @@ Where code and docs live. Canonical agent map: [`AGENTS.md`](../../AGENTS.md).
 | `kinetics.py` | Transesterification rates (`rxrates`) |
 | `split_nn.py` | Decanter split MLP + numpy `split()` |
 | `ode.py` | `ODEmodel` / `AEmodel` — Numba RHS |
-| `spectra.py` | Layer 2.8 NIR/IR virtual spectrum |
+| `spectra.py` | NIR/IR virtual spectrum sensor |
 | `simulation.py` | Batch driver |
 | `live_simulator.py` | Stateful per-step driver |
-| `fouling_modes.py` | Layer 2.8b five-mode fouling stepper |
+| `fouling_modes.py` | fouling-mode windows five-mode fouling stepper |
 | `plots.py` / `cli.py` | Plotly + CSV; `python -m bdsim` |
 
 ## Tests / docs
 
 | Path | Role |
 |------|------|
-| `tests/` | Smoke, fingerprints, Layer tests |
+| `tests/` | Smoke, fingerprints, feature tests |
 | `docs/` | **This vault** + optional upstream PDFs (may be gitignored) |
 | `USER.md` / `ADMIN.md` / `NOTES.md` | Operator, install, historical fixes |
 
@@ -49,4 +49,4 @@ flowchart TB
   ode --> live
 ```
 
-Related: [[Home]], [[What-is-bdsim]], [[ODE-and-AE]], [[Batch-driver]], [[Live-simulator]]
+Related: [Home](../Home.md), [What-is-bdsim](../00-orientation/What-is-bdsim.md), [ODE-and-AE](../20-math/ODE-and-AE.md), [Batch-driver](../30-engine/Batch-driver.md), [Live-simulator](../30-engine/Live-simulator.md)

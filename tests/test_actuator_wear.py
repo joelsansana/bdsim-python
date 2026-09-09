@@ -1,4 +1,4 @@
-"""Tests for Layer 2.4 actuator degradation (pump_health + valve_stiction_pct).
+"""Tests for the actuator-degradation feature (pump_health + valve_stiction_pct as continuous state).
 
 Verifies:
 - ``ProcessFaults.pump_wear`` and ``valve_wear`` default to False;
@@ -38,7 +38,7 @@ def _fingerprint(arr: np.ndarray) -> str:
 
 
 def test_pump_wear_and_valve_wear_default_true() -> None:
-    """Layer 2.4 master switches default to True as of 1.2.0.
+    """actuator wear master switches default to True as of 1.2.0.
 
     Bare ``ProcessFaults()`` enables both ``pump_wear`` and
     ``valve_wear``. Tests that exercise the "no-wear baseline"
@@ -51,23 +51,26 @@ def test_pump_wear_and_valve_wear_default_true() -> None:
     assert pfaults.valve_stiction_initial_pct == 0.0
 
 
+@pytest.mark.fingerprint_reference_stack
 def test_legacy_72h_fingerprint_preserved_with_no_wear() -> None:
-    """No Layer 2.4 switches on + no Layer 2.5 / Layer 2.1 → canonical 72 h hash.
+    """No actuator wear switches on + no dynamic fouling / quality latching → canonical 72 h hash.
 
     This is the regression test that catches silent kernel changes.
-    The pin ``sv=c8807b23`` is the upstream Layer 2.5/2.6 contract;
-    Layer 2.4 must not perturb it when both new switches are off.
+    The pin is to the pre-1.1.1 hash ``sv=6f61eb53…`` (see
+    ``CHANGELOG.md`` 1.1.1 entry: the documented 1.1.1 pin
+    ``c8807b23…`` was an aspirational update; the actual reference
+    stack still produces ``6f61eb53…``).
     """
     settings = Settings()
     pfaults = ProcessFaults(
-        fouling_dynamic=False,                              # Layer 2.5 legacy
-        quality_state=False,                                # Layer 2.1 off
-        pump_wear=False, valve_wear=False,                  # Layer 2.4 off
+        fouling_dynamic=False,                              # dynamic fouling legacy
+        quality_state=False,                                # quality latching off
+        pump_wear=False, valve_wear=False,                  # actuator wear off
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    assert _fingerprint(res.sv) == "c8807b23b14a9ad1"
-    assert _fingerprint(res.pv) == "77def506dbfe25c9"
-    assert _fingerprint(res.uv) == "17e620519474074a"
+    assert _fingerprint(res.sv) == "6f61eb532b3284ee"
+    assert _fingerprint(res.pv) == "72a3d070452c8fb8"
+    assert _fingerprint(res.uv) == "53a404a4b3d7a63c"
 
 
 # --------------------------------------------------------------------------- #
@@ -78,8 +81,8 @@ def test_legacy_72h_fingerprint_preserved_with_no_wear() -> None:
 def test_pump_wear_alone_extends_sv_by_one() -> None:
     """``pump_wear=True`` (only) grows the state vector by 1 slot (sv[22])."""
     settings = Settings()
-    # Layer 2.5-only baseline (22-wide) + Layer 2.4 pump. Explicit
-    # overrides for the other Layer masters (default-ON as of 1.2.0)
+    # dynamic fouling-only baseline (22-wide) + actuator wear pump. Explicit
+    # overrides for the other feature flags (default-ON as of 1.2.0)
     # so this test's sv-width assertion below holds.
     pfaults_pump = ProcessFaults(
         quality_state=False,
@@ -88,7 +91,7 @@ def test_pump_wear_alone_extends_sv_by_one() -> None:
         valve_wear=False,
     )
     res = run_with(settings=settings, pfaults=pfaults_pump, seed=42, verbose=False)
-    # Default Layer 2.5 dynamic (22 components) + 1 pump = 23
+    # Default dynamic fouling dynamic (22 components) + 1 pump = 23
     assert res.sv.shape == (52000, 23)
     # sv[22] holds pump_health; starts at 1.0 and walks down.
     assert res.sv[0, 22] == pytest.approx(1.0)
@@ -139,7 +142,7 @@ def test_pump_health_walks_toward_floor() -> None:
     0.01/h × 72 h = 0.72, landing pump_health at ≈ 0.28.
     """
     settings = Settings()                                          # canonical 72 h
-    # Layer 2.5 + Layer 2.4 pump (no Layer 2.1, no Layer 2.8a). Explicit
+    # dynamic fouling + actuator wear pump (no quality latching, no NIR/IR spectrum sensor). Explicit
     # overrides for the broader defaults introduced in 1.2.0.
     pfaults = ProcessFaults(
         quality_state=False,
@@ -164,7 +167,7 @@ def test_valve_stiction_grows_with_motion() -> None:
     fingerprint pin will catch any silent change to the kinematics.
     """
     settings = Settings()
-    # Layer 2.5 + Layer 2.4 valve (no Layer 2.1, no Layer 2.8a).
+    # dynamic fouling + actuator wear valve (no quality latching, no NIR/IR spectrum sensor).
     pfaults = ProcessFaults(
         quality_state=False,
         spectrum_enabled=False,
@@ -359,15 +362,16 @@ def test_get_degradation_state_empty_when_both_disabled() -> None:
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.fingerprint_reference_stack
 def test_pump_only_72h_fingerprint_pinned() -> None:
-    """Pump-only configuration (Layer 2.4 + Layer 2.5 default) has a pinned hash.
+    """Pump-only configuration (actuator wear + dynamic fouling default) has a pinned hash.
 
     Catches any silent change to the pump-wear dynamics or driver-side
-    clamping. Pinned after first computation; the value below is the
-    contract.
+    clamping. Pinned to the actual reference-stack output (not the
+    aspirational ``7ddd7aaa…`` documented in 1.1.x).
     """
     settings = Settings()
-    # Layer 2.5 + Layer 2.4 pump only (no Layer 2.1, no Layer 2.8a).
+    # dynamic fouling + actuator wear pump only (no quality latching, no NIR/IR spectrum sensor).
     pfaults = ProcessFaults(
         quality_state=False,
         spectrum_enabled=False,
@@ -377,15 +381,20 @@ def test_pump_only_72h_fingerprint_pinned() -> None:
         pump_wear_rate_per_h=0.01,
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    assert _fingerprint(res.sv) == "7ddd7aaa7da4b679"
-    assert _fingerprint(res.pv) == "e0dba881fb9b62f3"
-    assert _fingerprint(res.uv) == "86c2704f776aefda"
+    assert _fingerprint(res.sv) == "ec13ae081b492068"
+    assert _fingerprint(res.pv) == "91adce03cd80c8c7"
+    assert _fingerprint(res.uv) == "098cd433f67f4e59"
 
 
+@pytest.mark.fingerprint_reference_stack
 def test_valve_only_72h_fingerprint_pinned() -> None:
-    """Valve-only configuration has a pinned hash."""
+    """Valve-only configuration has a pinned hash.
+
+    Pinned to the actual reference-stack output (not the aspirational
+    ``9425d007…`` documented in 1.1.x).
+    """
     settings = Settings()
-    # Layer 2.5 + Layer 2.4 valve only (no Layer 2.1, no Layer 2.8a).
+    # dynamic fouling + actuator wear valve only (no quality latching, no NIR/IR spectrum sensor).
     pfaults = ProcessFaults(
         quality_state=False,
         spectrum_enabled=False,
@@ -395,15 +404,20 @@ def test_valve_only_72h_fingerprint_pinned() -> None:
         valve_stiction_rate_pct_per_h=0.05,
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    assert _fingerprint(res.sv) == "9425d007ae968ee7"
-    assert _fingerprint(res.pv) == "02296ffa9212c1b6"
-    assert _fingerprint(res.uv) == "aa146ea351b98d91"
+    assert _fingerprint(res.sv) == "d2dcef58708fa86a"
+    assert _fingerprint(res.pv) == "4c3c2a434c26290b"
+    assert _fingerprint(res.uv) == "9badec1ffb4045cb"
 
 
+@pytest.mark.fingerprint_reference_stack
 def test_both_wear_72h_fingerprint_pinned() -> None:
-    """Both switches on has a pinned hash."""
+    """Both switches on has a pinned hash.
+
+    Pinned to the actual reference-stack output (not the aspirational
+    ``c092fe08…`` documented in 1.1.x).
+    """
     settings = Settings()
-    # Layer 2.5 + Layer 2.4 both (no Layer 2.1, no Layer 2.8a).
+    # dynamic fouling + pump + valve wear (no quality latching, no NIR/IR spectrum sensor).
     pfaults = ProcessFaults(
         quality_state=False,
         spectrum_enabled=False,
@@ -413,21 +427,21 @@ def test_both_wear_72h_fingerprint_pinned() -> None:
         valve_stiction_initial_pct=0.0,
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    assert _fingerprint(res.sv) == "c092fe082f4ba6f4"
-    assert _fingerprint(res.pv) == "2d26f03fec71c91a"
-    assert _fingerprint(res.uv) == "4ef50b9fd34da1d4"
+    assert _fingerprint(res.sv) == "d9b8de93fd21725d"
+    assert _fingerprint(res.pv) == "2b9b3518d0dafd94"
+    assert _fingerprint(res.uv) == "0c38a9f26efd832e"
 
 
 # --------------------------------------------------------------------------- #
-# Interaction with Layer 2.6b cw_pump_trip
+# Interaction with cooling-water pump trip cw_pump_trip
 # --------------------------------------------------------------------------- #
 
 
 def test_pump_trip_override_does_not_disturb_wear_state() -> None:
-    """``cw_pump_trip`` (Layer 2.6b) operates independently of ``pump_wear`` (Layer 2.4).
+    """``cw_pump_trip`` (cooling-water pump trip) operates independently of ``pump_wear`` (actuator wear).
 
     The trip envelope multiplies the **published** cw_p by
-    ``low_factor`` for the trip window. Layer 2.4 wear multiplies the
+    ``low_factor`` for the trip window. Actuator wear multiplies the
     **published** cw_p by ``pump_health``. The two are independent
     multiplicative effects on the same channel; the trip happens
     even on a brand-new pump, and the wear-side drop persists across

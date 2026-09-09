@@ -17,7 +17,7 @@ Computed in `_measurements` (`bdsim/simulation.py`):
 | 3 | FICA-401 / Foil | `Qoil * ρ_oil` | kg/s |
 | 4 | Filter DP | `K4F * Qo / r^4` | Pa (process ΔP) |
 
-Fault model (batch): `pv = signal * (a * v + b + noise)`. Live adds bias / stuck / dropouts on `SensorFaults`. See [[Channel-indices]].
+Fault model (batch): `pv = signal * (a * v + b + noise)`. Live adds bias / stuck / dropouts on `SensorFaults`. See [Channel-indices](../40-helpers/Channel-indices.md).
 
 ## PID loops
 
@@ -30,7 +30,7 @@ Fault model (batch): `pv = signal * (a * v + b + noise)`. Live adds bias / stuck
 | 3 | `sp3` / `live_sp3` | hH |
 | 4 | `sp4` / `live_sp4` | Foil |
 
-Controllers update every `nic` steps. Gains in `PIDController`. Valve path can apply [[Glossary#Valve stiction|stiction]] (`ValveFaults`).
+Controllers update every `nic` steps. Gains in `PIDController`. Valve path can apply [stiction](../Glossary.md#valve-stiction) (`ValveFaults`).
 
 ```mermaid
 sequenceDiagram
@@ -46,4 +46,4 @@ sequenceDiagram
   PV ->> PID: next sample
 ```
 
-Related: [[Process-flow]], [[Batch-driver]], [[Live-simulator]], [[Config-surface]]
+Related: [Process-flow](../10-plant/Process-flow.md), [Batch-driver](../30-engine/Batch-driver.md), [Live-simulator](../30-engine/Live-simulator.md), [Config-surface](../30-engine/Config-surface.md)

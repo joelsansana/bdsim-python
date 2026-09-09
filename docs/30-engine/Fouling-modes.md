@@ -1,9 +1,9 @@
 ---
-tags: [engine, fouling, layer-2.8b]
+tags: [engine, fouling, fouling-modes]
 aliases: [Fouling modes, Five-mode stepper]
 ---
 
-# Fouling modes (Layer 2.8b)
+# Fouling modes (fouling-mode windows)
 
 The five-mode fouling stepper is the Python port of Fernandes 2019 /
 Strelet Dec 2019 `fouling.m` from the BDSIM_spectr reference
@@ -25,19 +25,19 @@ Theat = TR - factor * Qheat / (NR * cpmolR)
 `factor = 1` means no fouling; smaller values mean the heat exchanger
 is less effective at delivering heat to the reactor.
 
-## Three-layer cooperation
+## Three-path cooperation
 
-Three layers cooperate to produce the factor:
+Three paths cooperate to produce the factor:
 
-1. **Layer 2.5 (continuous α)** — when `pfaults.fouling_dynamic=True`
+1. **dynamic fouling (continuous α)** — when `pfaults.fouling_dynamic=True`
    the state vector carries `sv[21]` (α ∈ [0, 1]) and `factor` follows
    the dynamics. This is the "physics-based slow fouling" story.
-2. **Layer 2.8b (windowed modes 4/5, this module)** — during an active
+2. **fouling-mode windows (windowed modes 4/5, this module)** — during an active
    fault event the stepper overrides `factor` with the ARMAX-mode
    output. This is the "fast, stochastic, fault-injection" story:
    intermittent feedstock-impurity spikes that look like ARMAX noise
    to a downstream correlation engine.
-3. **Layer 2.5 fallback (static)** — when neither above applies,
+3. **dynamic fouling fallback (static)** — when neither above applies,
    `factor = 1 / (1 + foulingpar * t)` (the legacy pre-baked series)
    is used.
 
@@ -99,13 +99,13 @@ continuous-α path.
 | `fouling_mode_active_end_t` | `-1.0` | sim time at which the active window expires |
 | `fouling_mode_active_seed` | `None` | optional seed for ARMAX RNG (reproducibility) |
 
-See [[Config-surface]] for the full table.
+See [Config-surface](../30-engine/Config-surface.md) for the full table.
 
 ## Tests
 
-- `tests/test_layer28b_fouling_modes.py` — pure-Python stepper tests
+- `tests/test_fouling_modes.py` — pure-Python stepper tests
   (modes 0–5, snapshot/restore, ARMAX determinism).
-- `tests/test_layer28b_live_fouling.py` — LiveSimulator wiring
+- `tests/test_fouling_modes_live.py` — LiveSimulator wiring
   (windowed-mode activation, priority over continuous α, end-of-window
   behaviour, byte-identical baseline when no window is active).
 
@@ -113,7 +113,7 @@ See [[Config-surface]] for the full table.
 
 - Upstream `fouling.m` — Fernandes 2019, Strelet Dec 2019
   (BDSIM_spectr reference distribution).
-- [[Layers-roadmap]] for Layer 2.8b context.
-- [[Config-surface]] for the full `ProcessFaults` table.
+- [Config-surface](../30-engine/Config-surface.md) for fouling-mode windows context.
+- [Config-surface](../30-engine/Config-surface.md) for the full `ProcessFaults` table.
 
-Related: [[Layers-roadmap]], [[Config-surface]], [[Fingerprints-and-tests]], [[Home]]
+Related: [Config-surface](../30-engine/Config-surface.md), [Config-surface](../30-engine/Config-surface.md), [Fingerprints-and-tests](../30-engine/Fingerprints-and-tests.md), [Home](../Home.md)

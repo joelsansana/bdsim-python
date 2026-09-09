@@ -35,3 +35,37 @@ bdsim = ["data/*.csv"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# -----------------------------------------------------------------------------
+# Ruff
+# -----------------------------------------------------------------------------
+# Scope: the bdsim project deliberately tolerates a small set of pre-existing
+# ruff findings (see AGENTS.md "Ruff clean on new code"). The rules we care
+# about for new code and PRs are:
+#
+#   E, W  — pycodestyle errors / warnings (real bugs)
+#   F     — pyflakes (unused imports, undefined names)
+#   I     — isort (import order)
+#   B     — flake8-bugbear (likely bugs)
+#   UP    — pyupgrade (modern syntax)
+#
+# Everything else is opt-in. Numba-kernel files (ode.py, fouling_modes.py
+# parts of split_nn.py) keep their multi-statement line style and the
+# resulting E702 / F841 / E401 — see AGENTS.md "Sacred hot path".
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+# Per-file ignores: ode.py is the Numba RHS; the multi-statement lines look
+# "unused" to ruff but the variables are read on the next statement in the
+# same physical line. AGENTS.md marks these out of scope. plots.py uses
+# Plotly keyword-style `dict(color=...)` heavily — rewriting to a literal is
+# purely cosmetic, so we ignore C408 there too.
+[tool.ruff.lint.per-file-ignores]
+"bdsim/ode.py" = ["E702", "E401", "F841"]
+"bdsim/plots.py" = ["C408"]
+"bdsim/live_simulator.py" = ["PYI034"]  # Self return type requires Python 3.11+; we're on 3.10
+"tests/*" = ["F841", "RUF059"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["bdsim"]

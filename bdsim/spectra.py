@@ -1,5 +1,5 @@
 """
-NIR/IR absorbance spectrum model — Layer 2.8 (Roadmap).
+NIR/IR absorbance spectrum model — NIR/IR spectrum sensor (Roadmap).
 
 Port of ``BDSIM_spectr/comp_spectrum.m`` (Eugeniu Strelet, Dec 2019).
 
@@ -50,7 +50,6 @@ from dataclasses import dataclass, field
 from importlib import resources
 
 import numpy as np
-
 
 # Number of species per location. The MATLAB upstream supports the
 # dryer locations too (sv(22:27), sv(28:33)) but our state vector

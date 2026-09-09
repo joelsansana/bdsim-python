@@ -5,7 +5,7 @@ aliases: [Qoil, Mixture properties]
 
 # Thermo
 
-Module: `bdsim/thermo.py` — pure NumPy leaf functions (easy to unit-test). JIT copies of critical bits live in [[ODE-and-AE]].
+Module: `bdsim/thermo.py` — pure NumPy leaf functions (easy to unit-test). JIT copies of critical bits live in [ODE-and-AE](../20-math/ODE-and-AE.md).
 
 ## Functions
 
@@ -25,10 +25,10 @@ $$
 Q_{\mathrm{oil}} = -K_{2F}\frac{\alpha^{2}}{r^{4}} + \sqrt{K_{2F}^{2}\frac{\alpha^{4}}{r^{8}} + K_{3F}\,\alpha^{2}}
 $$
 
-Constants `K2F`, `K3F`, `K4F` come from `Parameters` (filter geometry). Mass flow measurement uses \(Q_{\mathrm{oil}}\cdot\rho_{\mathrm{oil}}\) — [[Sensors-and-control]].
+Constants `K2F`, `K3F`, `K4F` come from `Parameters` (filter geometry). Mass flow measurement uses \(Q_{\mathrm{oil}}\cdot\rho_{\mathrm{oil}}\) — [Sensors-and-control](../10-plant/Sensors-and-control.md).
 
 ## Mixture rules
 
 Mole-fraction weighted means for \(M\) and \(c_p\) — callers must keep molar vs massic consistent.
 
-Related: [[Kinetics]], [[ODE-and-AE]], [[Process-flow]], [[Units-and-streams]]
+Related: [Kinetics](../20-math/Kinetics.md), [ODE-and-AE](../20-math/ODE-and-AE.md), [Process-flow](../10-plant/Process-flow.md), [Units-and-streams](../10-plant/Units-and-streams.md)

@@ -30,18 +30,17 @@ from numba import njit
 from scipy.integrate import solve_ivp
 
 from .config import (
-    Parameters,
-    ProcessFaults,
-    SensorFaults,
-    ValveFaults,
     ARMAX,
+    Parameters,
     PIDController,
-    Settings,
+    ProcessFaults,
     Results,
+    SensorFaults,
+    Settings,
+    ValveFaults,
 )
-from .ode import AEmodel, make_rhs, _qoil_jit
+from .ode import AEmodel, _qoil_jit, make_rhs
 from .thermo import side_reactions
-
 
 # -----------------------------------------------------------------------------
 # Filter constants (clogging_kit.m)
@@ -89,8 +88,8 @@ def _intermittence(
             tnew = tt + sfaults.tmaxInterm[k] * np.random.rand()
             tnew = min(tnew - (tnew % dt), tf)
             if np.random.rand() < 0.5:
-                ind1 = int(round((tt - ti) / dt + 1))
-                ind2 = int(round((tnew - ti) / dt + 1))
+                ind1 = round((tt - ti) / dt + 1)
+                ind2 = round((tnew - ti) / dt + 1)
                 signal[ind1:ind2 + 1, k] = 1.0
                 a[ind1:ind2 + 1, k] = 1.0
                 b[ind1:ind2 + 1, k] = 0.0
@@ -313,7 +312,7 @@ def run_with(
     t = np.arange(settings.ti, settings.tf + settings.dt / 2, settings.dt)
     lt = len(t)
 
-    # ----- Layer 2.6: external disturbance track (lt x 3)
+    # ----- external disturbances: external disturbance track (lt x 3)
     # Bind pfaults into settings so Settings.disturbances(t) can read
     # the knobs without callers having to thread pfaults through.
     settings._pfaults = pfaults
@@ -394,27 +393,27 @@ def run_with(
     vpos = np.zeros((lt, len(vfaults.uindex)))
     vpos[0, :] = u0[vfaults.uindex - 1]
 
-    # Layer 2.5: HEX fouling α is in sv[21] only when the dynamic path
+    # dynamic fouling: HEX fouling α is in sv[21] only when the dynamic path
     # is enabled. Legacy mode keeps the state vector at 21 components
     # for byte-identical reproducibility vs. the upstream baseline.
     use_dynamic_alpha = pfaults.fouling_dynamic
 
-    # Layer 2.1: quality state adds 6 components when enabled
-    # (sv[22:28]). When False, state vector stops at 22 (Layer 2.5 only).
+    # quality latching: quality state adds 6 components when enabled
+    # (sv[22:28]). When False, state vector stops at 22 (dynamic fouling only).
     use_quality_state = pfaults.quality_state
 
-    # Layer 2.4: pump and valve degradation each add one continuous
-    # state slot. Independent of Layer 2.5 / Layer 2.1 — demos can
+    # actuator wear: pump and valve degradation each add one continuous
+    # state slot. Independent of dynamic fouling / quality latching — demos can
     # enable either, both, or neither. The state-vector width grows
     # by 1 or 2 as appropriate.
     use_pump_wear = pfaults.pump_wear
     use_valve_wear = pfaults.valve_wear
 
-    # Layer 2.4: forward the kinetics overrides onto ``p`` so the
-    # Numba kernel reads resolved values. Pattern matches Layer 2.5.
+    # actuator wear: forward the kinetics overrides onto ``p`` so the
+    # Numba kernel reads resolved values. Pattern matches dynamic fouling.
     p.apply_layer24_overrides(pfaults)
 
-    # State vector width: 21 (legacy), 22 (+ Layer 2.5), 28 (+ Layer 2.1),
+    # State vector width: 21 (legacy), 22 (+ dynamic fouling), 28 (+ quality latching),
     # +1 if pump_wear (sv[22] in legacy mode, sv[28] in quality mode),
     # +1 if valve_wear (sv[23] in legacy mode, sv[29] in quality mode).
     sv_width = (
@@ -439,8 +438,8 @@ def run_with(
         sv[0, 25] = p.ffa_ref                                  # FFA in feed (mass fraction)
         sv[0, 26] = 0.01                                       # water in feed (1% by mass, typical UCO)
         sv[0, 27] = p.iv_eq                                    # IV in feed
-    # Layer 2.4: continuous-state slots live *after* whatever the
-    # legacy / Layer 2.5 / Layer 2.1 stack produces. We compute the
+    # actuator wear: continuous-state slots live *after* whatever the
+    # legacy / dynamic fouling / quality latching stack produces. We compute the
     # base index so the initial values land on the right row whether
     # quality mode is on or off.
     layer24_base = (
@@ -469,7 +468,7 @@ def run_with(
 
     tclean = []
 
-    # ---- Layer 2.1: lab-cycle latching ------------------------------
+    # ---- quality latching: lab-cycle latching ------------------------------
     # quality_latched[i, :] holds the most-recent lab sample for
     # (FAME, water, IV) at sim step i. The latched value stays
     # constant between lab cycles — this is the time-lag structure
@@ -530,7 +529,7 @@ def run_with(
         u = u_new
         unoiseOLD = unoise
 
-        # ----------------- Layer 2.6 + Layer 2.7: external disturbance overlay
+        # ----------------- external disturbances + operator knobs: external disturbance overlay
         # Apply the perturbation kernel: shifts to u[1] (Tmet), u[3]
         # (Toil), and a multiplicative scale on u[4] (Qheat). When
         # all amplitudes are zero (default) we skip the kernel
@@ -538,7 +537,7 @@ def run_with(
         # (FP operation ordering matters: even an identity u *= 1.0
         # introduces last-bit drift after Numba-JIT).
         #
-        # Layer 2.7: operator knob overlays (live_* fields) take
+        # operator disturbance knobs: operator knob overlays (live_* fields) take
         # effect here too — the deviation-from-baseline terms must
         # use the same baseline as the track used to generate
         # ``amb / cw_t / cw_p``, so we resolve the knobs once at the
@@ -553,14 +552,14 @@ def run_with(
             or pfaults.live_ambient_amplitude_k is not None
             or pfaults.live_cw_t_mean_k is not None
             or pfaults.live_cw_p_drift_pa_per_h is not None
-            # Layer 2.4: pump_wear multiplies cw_p per-step, so the
+            # actuator wear: pump_wear multiplies cw_p per-step, so the
             # perturbation block must run even when all the
             # sinusoid / drift / live-knob amplitudes are zero.
             # Without this, a worn pump would not affect Qheat.
             or use_pump_wear
         ):
             amb, cw_t, cw_p = disturbance_track[i - 1, :]
-            # Layer 2.4: multiply cw_p by current pump_health (read
+            # actuator wear: multiply cw_p by current pump_health (read
             # from the previous step's state). At pump_health = 1.0
             # the multiplier is 1.0 and the published pressure is the
             # nominal; at 0.5 the pump delivers only half the head.
@@ -569,7 +568,7 @@ def run_with(
             # the multiplier here.
             if use_pump_wear:
                 cw_p = cw_p * sv[i - 1, layer24_base + 0]
-            # Layer 2.7: baseline references must match the resolved
+            # operator disturbance knobs: baseline references must match the resolved
             # means/amps used inside settings.disturbances(). Pull
             # them once so the deviation math is consistent.
             amb_mean_resolved = (
@@ -620,7 +619,7 @@ def run_with(
         uu = u.copy()
         uu[vfaults.uindex - 1] = vpos[i, :]
         rhs.set_u(uu)
-        # Layer 2.5: factor selection depends on the fouling mode.
+        # dynamic fouling: factor selection depends on the fouling mode.
         # Dynamic path: the RHS itself reads α from sv[21], so the
         # pre-baked factor argument is irrelevant; pass the previous
         # step's α for parity with the legacy call signature.
@@ -651,14 +650,14 @@ def run_with(
         else:
             sv[i, :] = sol.y[:, -1]
 
-        # Layer 2.5 post-integration handling of sv[21] (α) — only when
+        # dynamic fouling post-integration handling of sv[21] (α) — only when
         # the state vector is wide enough (dynamic mode). Legacy mode
         # leaves sv at its 21-component upstream shape for byte-identical
         # reproducibility.
         if use_dynamic_alpha:
             sv[i, 21] = float(np.clip(sv[i, 21], 0.0, 1.0))
 
-        # Layer 2.4: post-integration clamping on pump_health and
+        # actuator wear: post-integration clamping on pump_health and
         # valve_stiction_pct. The kernel writes raw derivatives; the
         # driver enforces physical bounds so we don't accumulate
         # numerical drift outside the operating envelope.
@@ -687,7 +686,7 @@ def run_with(
             if verbose:
                 print(f"  Filter cleaning performed at t = {t[i]:.1f} s")
 
-        # ----------------- quality state post-processing (Layer 2.1)
+        # ----------------- quality state post-processing (quality latching)
         # Clamp the true instantaneous quality to physical bounds.
         # FAME% ∈ [0, 100], water ∈ [0, 5000] ppm, IV ∈ [0, 200].
         # Feedstock state also clamped to physical bounds.
@@ -738,7 +737,7 @@ def run_with(
     # only one place avoids the previous double-conversion bug where the
     # kg/h values ended up 115× too large.
 
-    # Layer 2.4: apply pump_health multiplier to the published PCW
+    # actuator wear: apply pump_health multiplier to the published PCW
     # channel (index 2) when pump_wear is on. The kernel applies the
     # same factor on u[4] in the perturbation block; we mirror it on
     # the published snapshot here so dashboards / live consumers
