@@ -13,10 +13,16 @@ authors = [
     {name = "Joel Sansana"},
 ]
 dependencies = [
-    "numpy>=1.24",
-    "numba>=0.58",
-    "scipy>=1.11",
-    "plotly>=6.9.0",
+    # Upper bounds are conservative — they're set to the major
+    # version we know the fingerprint contract was calibrated
+    # against. A future major-version bump (e.g. numpy 3.x, scipy
+    # 2.x) may need a re-pinning rather than a silent reinstall
+    # (issue #14). The exact pinned set lives in ``uv.lock``;
+    # these bounds are the install-time contract.
+    "numpy>=1.24,<3.0",
+    "numba>=0.58,<1.0",
+    "scipy>=1.11,<2.0",
+    "plotly>=6.9.0,<7.0",
 ]
 
 [project.optional-dependencies]
@@ -24,12 +30,12 @@ dependencies = [
 # Inference-only users (run_with, LiveSimulator) do not need it —
 # the split() function is a pure-NumPy reference.
 torch = [
-    "torch>=2.0",
+    "torch>=2.0,<3.0",
 ]
 test = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
-    "torch>=2.0",
+    "torch>=2.0,<3.0",
 ]
 
 [tool.setuptools.packages.find]
