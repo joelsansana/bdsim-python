@@ -428,6 +428,89 @@ def test_settings_rejects_nan_sp() -> None:
         Settings(sp1=float("nan"))
 
 
+# ---------------------------------------------------------------------------
+# live_sp* property semantics (issue #6)
+# ---------------------------------------------------------------------------
+
+
+def test_live_sp_falls_through_to_sp_by_default() -> None:
+    """Without an explicit override, ``live_sp*`` resolves to ``sp*``."""
+    s = Settings(sp1=320.0, sp2=310.0, sp3=0.6, sp4=2500.0)
+    assert s.live_sp1 == 320.0
+    assert s.live_sp2 == 310.0
+    assert s.live_sp3 == 0.6
+    assert s.live_sp4 == 2500.0
+
+
+def test_live_sp_override_persists() -> None:
+    """Setting ``live_sp1`` to a different value stores the override."""
+    s = Settings(sp1=320.0)
+    s.live_sp1 = 400.0
+    assert s.live_sp1 == 400.0
+    assert s.sp1 == 320.0                    # sp1 unchanged
+
+
+def test_live_sp_override_clears_when_equal_to_sp() -> None:
+    """Setting ``live_sp1 = sp1`` (or any equal value) clears the
+    override, so subsequent reads fall through to ``sp1`` again."""
+    s = Settings(sp1=320.0)
+    s.live_sp1 = 400.0
+    assert s.live_sp1 == 400.0
+    s.live_sp1 = 320.0
+    assert s.live_sp1 == 320.0               # back to sp1 (override cleared)
+
+
+def test_sp_mutation_picked_up_by_live_sp() -> None:
+    """Mutating ``sp1`` after construction is visible via the
+    ``live_sp1`` property fall-through (issue #6)."""
+    s = Settings(sp1=320.0)
+    assert s.live_sp1 == 320.0
+    s.sp1 = 350.0
+    assert s.live_sp1 == 350.0               # live driver sees the new sp1
+
+
+def test_sp_mutation_does_not_override_explicit_live_sp() -> None:
+    """When an explicit ``live_sp1`` override is set, mutating ``sp1``
+    does NOT clobber the override — the live driver continues to use
+    the override value."""
+    s = Settings(sp1=320.0)
+    s.live_sp1 = 500.0
+    s.sp1 = 350.0
+    assert s.live_sp1 == 500.0               # override still wins
+    assert s.sp1 == 350.0
+
+
+def test_live_sp_rejects_non_finite() -> None:
+    s = Settings()
+    with pytest.raises(ValueError, match="live_sp1.*must be finite"):
+        s.live_sp1 = float("nan")
+    with pytest.raises(ValueError, match="live_sp1.*must be finite"):
+        s.live_sp1 = float("inf")
+
+
+def test_live_sp_rejects_non_numeric() -> None:
+    s = Settings()
+    with pytest.raises(TypeError, match="live_sp1.*real number"):
+        s.live_sp1 = "abc"                   # type: ignore[arg-type]
+
+
+def test_live_sp_independent_per_index() -> None:
+    """Overriding ``live_sp1`` does not affect ``live_sp2`` etc."""
+    s = Settings()
+    s.live_sp2 = 999.0
+    assert s.live_sp2 == 999.0
+    assert s.live_sp1 == s.sp1
+    assert s.live_sp3 == s.sp3
+    assert s.live_sp4 == s.sp4
+
+
+def test_live_sp_no_longer_a_constructor_arg() -> None:
+    """``live_sp*`` are properties now, not constructor args. Passing
+    them as kwargs is rejected by the dataclass ``__init__``."""
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        Settings(live_sp1=400.0)             # type: ignore[call-arg]
+
+
 def test_settings_rejects_wrong_u0_length() -> None:
     with pytest.raises(ValueError, match="u0.*shape"):
         Settings(u0=np.zeros(5))

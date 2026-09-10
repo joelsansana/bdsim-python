@@ -1058,34 +1058,119 @@ class Settings:
     nic: int = 4                                              # controller update every nic steps
 
     # ------------------------------------------------------------------ #
-    # Live-mutable setpoints (Roadmap step 4). The ``LiveSimulator`` reads
-    # these on every PID tick; ``POST /control`` writes into them so the
-    # PID picks up the change on the next ``nic`` boundary.
+    # Live-mutable setpoint overrides (Roadmap step 4).
     #
-    # Important: ``simulation.run_with`` (the batch driver) does NOT honor
-    # ``live_sp*`` — it reads the static ``sp1..sp4`` once at setup. Mutating
-    # ``live_sp*`` only takes effect via ``LiveSimulator``. If you need a
-    # setpoint sweep in a batch run, edit ``sp1..sp4`` directly before calling
-    # ``run_with`` (or use the pre-baked ``sp[:, 3] += 100.0 * heaviside(...)``
-    # style that simulation.py uses for ``sp4``).
+    # ``live_sp1..4`` are now **properties** that resolve to either the
+    # stored override (when the user explicitly sets one) or fall
+    # through to the corresponding ``sp1..4`` value. This eliminates
+    # the dual-field footgun documented in issue #6 — mutating ``sp1``
+    # is now visible to the live driver (via the property fall-through)
+    # and mutating ``live_sp1`` is the documented "live override" path
+    # for the dashboard's ``POST /control`` endpoint.
     #
-    # The ``__post_init__`` mirror keeps ``live_sp*`` seeded from ``sp*`` so
-    # a freshly-built ``LiveSimulator`` starts at the documented setpoints.
-    # Do not write to ``sp*`` and ``live_sp*`` separately — pick one.
+    # Convention: ``sp*`` is the **source of truth**; ``live_sp*`` is
+    # an **optional override** that wins when it differs from ``sp*``.
+    # Setting ``live_sp1 = sim.settings.sp1`` (or any value equal to
+    # the underlying ``sp*``) clears the override and falls through.
+    #
+    # The ``simulation.run_with`` (batch) driver reads the static
+    # ``sp1..sp4`` once at setup, so post-construction mutations to
+    # either field only take effect on the *next* ``run_with`` call.
+    # The ``LiveSimulator`` reads the resolved ``live_sp*`` every
+    # PID tick and picks up changes immediately.
     # ------------------------------------------------------------------ #
-    live_sp1: float = 0.0
-    live_sp2: float = 0.0
-    live_sp3: float = 0.0
-    live_sp4: float = 0.0
+    _live_sp_overrides: dict[int, float] = field(default_factory=dict, repr=False)
+
+    @property
+    def live_sp1(self) -> float:
+        """Resolved live setpoint for loop 1 (TR). Returns the
+        explicit override if one is stored, else falls through to
+        :attr:`sp1`."""
+        return self._live_sp_overrides.get(0, self.sp1)
+
+    @live_sp1.setter
+    def live_sp1(self, value: float) -> None:
+        if not isinstance(value, (int, float, np.floating)):
+            raise TypeError(
+                f"live_sp1: expected a real number, got {type(value).__name__}"
+            )
+        v = float(value)
+        if not math.isfinite(v):
+            raise ValueError(f"live_sp1: must be finite; got {v!r}")
+        # Equality with sp1 means "no override wanted" — clear the slot
+        # so subsequent reads fall through to the canonical sp* value.
+        if v == self.sp1:
+            self._live_sp_overrides.pop(0, None)
+        else:
+            self._live_sp_overrides[0] = v
+
+    @property
+    def live_sp2(self) -> float:
+        return self._live_sp_overrides.get(1, self.sp2)
+
+    @live_sp2.setter
+    def live_sp2(self, value: float) -> None:
+        if not isinstance(value, (int, float, np.floating)):
+            raise TypeError(
+                f"live_sp2: expected a real number, got {type(value).__name__}"
+            )
+        v = float(value)
+        if not math.isfinite(v):
+            raise ValueError(f"live_sp2: must be finite; got {v!r}")
+        if v == self.sp2:
+            self._live_sp_overrides.pop(1, None)
+        else:
+            self._live_sp_overrides[1] = v
+
+    @property
+    def live_sp3(self) -> float:
+        return self._live_sp_overrides.get(2, self.sp3)
+
+    @live_sp3.setter
+    def live_sp3(self, value: float) -> None:
+        if not isinstance(value, (int, float, np.floating)):
+            raise TypeError(
+                f"live_sp3: expected a real number, got {type(value).__name__}"
+            )
+        v = float(value)
+        if not math.isfinite(v):
+            raise ValueError(f"live_sp3: must be finite; got {v!r}")
+        if v == self.sp3:
+            self._live_sp_overrides.pop(2, None)
+        else:
+            self._live_sp_overrides[2] = v
+
+    @property
+    def live_sp4(self) -> float:
+        return self._live_sp_overrides.get(3, self.sp4)
+
+    @live_sp4.setter
+    def live_sp4(self, value: float) -> None:
+        if not isinstance(value, (int, float, np.floating)):
+            raise TypeError(
+                f"live_sp4: expected a real number, got {type(value).__name__}"
+            )
+        v = float(value)
+        if not math.isfinite(v):
+            raise ValueError(f"live_sp4: must be finite; got {v!r}")
+        if v == self.sp4:
+            self._live_sp_overrides.pop(3, None)
+        else:
+            self._live_sp_overrides[3] = v
 
     def __post_init__(self) -> None:
-        """Validate ``Settings`` at construction time (issue #9), then
-        seed the live setpoints from the configured sp* values.
+        """Validate ``Settings`` at construction time (issue #9).
 
         Time axis must satisfy ``tf > ti`` and ``dt > 0``. ``u0``
         must be a length-6 finite vector. The loop-wiring index arrays
         (``mode_1b``, ``pvindex_1b``, ``uindex_1b``) must each be length 4
         with integer entries in ``[0, 6)``.
+
+        Note: ``live_sp*`` are properties backed by
+        :attr:`_live_sp_overrides` and fall through to the corresponding
+        ``sp*`` value when no override is stored — see the
+        ``live_sp*`` property docstrings for the new fall-through
+        semantics (issue #6).
         """
         _check_finite("ti", self.ti)
         _check_finite("tf", self.tf)
@@ -1133,13 +1218,6 @@ class Settings:
 
         for name in ("sp1", "sp2", "sp3", "sp4"):
             _check_finite(name, getattr(self, name))
-
-        # Seed live setpoints from configured sp* values (existing
-        # behavior — preserved verbatim).
-        self.live_sp1 = self.sp1
-        self.live_sp2 = self.sp2
-        self.live_sp3 = self.sp3
-        self.live_sp4 = self.sp4
 
 
 # -----------------------------------------------------------------------------
