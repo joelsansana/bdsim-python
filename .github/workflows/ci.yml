@@ -80,3 +80,27 @@ jobs:
           # No formatter action — the repo doesn't ship a ruff.toml and
           # we don't want to introduce formatting churn as part of CI.
           args: check
+
+  mypy:
+    name: mypy (permissive — issue #17)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+
+      - name: Set up Python
+        run: uv python install 3.10
+
+      - name: Sync with mypy extra
+        run: uv sync --extra dev --extra test --python 3.10
+
+      # Issue #17: mypy runs in permissive mode today (ignore_errors
+      # in mypy.ini). Errors are reported as informational output; the
+      # job exits 0. The path to tightening is documented in
+      # mypy.ini — remove ``ignore_errors = true`` once the codebase
+      # is clean enough to gate on.
+      - name: Run mypy
+        run: |
+          uv run mypy bdsim/ 2>&1 | tail -50 || true
+          echo "::notice::mypy reported issues above; the job is permissive and exits 0"
+          exit 0
