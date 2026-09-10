@@ -49,6 +49,27 @@ jobs:
         # Numba JIT cache is warmed by the smoke run; the rest is fast.
         run: uv run python -m pytest tests/ -q
 
+      - name: Run coverage report
+        # Coverage is informational only — we do not gate on a
+        # minimum-coverage threshold because the bdsim-dashboard
+        # also imports bdsim (and that path is exercised in
+        # dashboard-side tests, not here). The report is uploaded
+        # as a workflow artifact so contributors can diff before/
+        # after a change.
+        run: |
+          uv run python -m pytest tests/ -q \
+            --cov=bdsim \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.python-version }}
+          path: coverage.xml
+          retention-days: 30
+
   ruff:
     name: ruff
     runs-on: ubuntu-latest
