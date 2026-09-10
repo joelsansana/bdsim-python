@@ -16,14 +16,20 @@ dependencies = [
     "numpy>=1.24",
     "numba>=0.58",
     "scipy>=1.11",
-    "torch>=2.0",
     "plotly>=6.9.0",
 ]
 
 [project.optional-dependencies]
+# PyTorch is only needed for the trainable DecanterSplitNet class.
+# Inference-only users (run_with, LiveSimulator) do not need it —
+# the split() function is a pure-NumPy reference.
+torch = [
+    "torch>=2.0",
+]
 test = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    "torch>=2.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -31,7 +37,7 @@ include = ["bdsim*"]
 exclude = ["tests*"]
 
 [tool.setuptools.package-data]
-bdsim = ["data/*.csv"]
+bdsim = ["data/*.csv", "data/*.npz"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

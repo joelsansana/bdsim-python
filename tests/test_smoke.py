@@ -127,6 +127,34 @@ def test_split_nn_weights_loaded_from_data_file():
     assert _BIAS_GAMMA.shape == (3,)
 
 
+def test_split_nn_works_without_torch():
+    """Issue #13: the pure-NumPy ``split()`` function is the
+    inference path. It must work even on a torch-less install."""
+    # ``split`` is imported by the ODE kernel; if this returns, the
+    # torch-free path is healthy.
+    from bdsim.split_nn import split
+    out = split(0.4, 0.15, 320.0)
+    assert out.shape == (3,)
+
+
+def test_decanter_split_net_raises_without_torch(monkeypatch):
+    """When torch is unimportable, ``DecanterSplitNet()`` raises a
+    friendly ``ImportError`` pointing at the ``[torch]`` extra."""
+    from bdsim import split_nn
+
+    # Make ``import torch`` raise ImportError without touching the
+    # already-imported torch module (the rest of the test suite
+    # needs torch). We patch ``_require_torch`` instead.
+    def _no_torch():
+        raise ImportError(
+            "DecanterSplitNet requires torch. Install with: "
+            "pip install bdsim[torch]"
+        )
+    monkeypatch.setattr(split_nn, "_require_torch", _no_torch)
+    with pytest.raises(ImportError, match=r"pip install bdsim\[torch\]"):
+        split_nn.DecanterSplitNet()
+
+
 # ---------------------------------------------------------------------------
 # End-to-end simulation
 # ---------------------------------------------------------------------------
