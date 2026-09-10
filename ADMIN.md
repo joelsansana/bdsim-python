@@ -177,3 +177,38 @@ internal kernels without touching fingerprints or the public schema.
 The dashboard's `pyproject.toml` does **not** pin a minimum bdsim
 version today — add it when the dashboard gains an installation
 contract.
+
+## PyPI publication (issue #15)
+
+The package is built and verified; PyPI upload is the only step that
+needs human credentials.
+
+```bash
+# 1. Build sdist + wheel (clean, no leftover artifacts).
+rm -rf dist/
+uv build
+
+# 2. Twine metadata check (catches README / description issues
+#    before they cause a rejected upload).
+uv run --with twine python -m twine check dist/*
+
+# 3. Upload to Test PyPI first.
+uv run --with twine python -m twine upload --repository testpypi dist/*
+
+# 4. Verify the Test PyPI install works:
+#    pip install --index-url https://test.pypi.org/simple/ bdsim
+#    python -c "import bdsim; print(bdsim.__version__)"
+
+# 5. Upload to production PyPI.
+uv run --with twine python -m twine upload dist/*
+```
+
+Credentials: a PyPI API token. Configure via
+``~/.pypirc`` (``[pypi] username = __token__, password = pypi-...``)
+or set ``TWINE_USERNAME`` / ``TWINE_PASSWORD`` environment variables.
+Do **not** commit the token.
+
+After upload, verify on PyPI that the package metadata is correct
+(description, topics, project URLs) and that the optional ``[torch]``
+extra resolves.
+
