@@ -9,6 +9,8 @@ so that ``run()`` reproduces the upstream trajectory to within solver tolerance.
 from __future__ import annotations
 
 import copy
+import math
+import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -16,6 +18,73 @@ import numpy as np
 
 if TYPE_CHECKING:
     from .spectra import SpectrumSample
+
+
+# -----------------------------------------------------------------------------
+# Validation helpers (issue #9)
+# -----------------------------------------------------------------------------
+#
+# These helpers back ``__post_init__`` validation on every config dataclass.
+# The rules are deliberately permissive — they catch clearly-broken input
+# (NaN, Inf, wrong shapes, negative physical quantities, out-of-enum
+# switches) but do not enforce tight operating-range bounds. All current
+# defaults pass; the byte-identical fingerprint contract is preserved.
+#
+# Error class policy: ``ValueError`` for value / range / shape problems,
+# ``TypeError`` for wrong-type inputs (per TRY004).
+
+def _err(name: str, msg: str) -> ValueError:
+    return ValueError(f"{name}: {msg}")
+
+
+def _check_finite(name: str, value: float) -> None:
+    if not isinstance(value, (int, float, np.integer, np.floating)):
+        raise TypeError(
+            f"{name}: expected a real number, got {type(value).__name__}"
+        )
+    if not math.isfinite(float(value)):
+        raise _err(name, f"must be finite; got {value!r}")
+
+
+def _check_finite_array(name: str, value: np.ndarray) -> None:
+    if not isinstance(value, np.ndarray):
+        raise TypeError(
+            f"{name}: expected np.ndarray, got {type(value).__name__}"
+        )
+    if not np.all(np.isfinite(value)):
+        raise _err(name, "all entries must be finite")
+
+
+def _check_nonneg(name: str, value: float) -> None:
+    _check_finite(name, value)
+    if float(value) < 0.0:
+        raise _err(name, f"must be non-negative; got {value!r}")
+
+
+def _check_positive(name: str, value: float) -> None:
+    _check_finite(name, value)
+    if float(value) <= 0.0:
+        raise _err(name, f"must be positive; got {value!r}")
+
+
+def _check_in_set(name: str, value: int, allowed: tuple[int, ...]) -> None:
+    if not isinstance(value, (int, np.integer)) or isinstance(value, bool):
+        raise TypeError(
+            f"{name}: expected an integer in {allowed}, got {type(value).__name__}"
+        )
+    if int(value) not in allowed:
+        raise _err(
+            name, f"must be one of {allowed}; got {value!r}"
+        )
+
+
+def _check_shape(
+    name: str, value: np.ndarray, expected: tuple[int, ...]
+) -> None:
+    if value.shape != expected:
+        raise _err(
+            name, f"must have shape {expected}; got {tuple(value.shape)}"
+        )
 
 
 # -----------------------------------------------------------------------------
@@ -139,6 +208,101 @@ class Parameters:
     # passes the per-second rate so the kernel can apply it directly.
     k_valve_stiction: float = 0.05 / 3600.0                   # %/s per (lift%/s)
     valve_stiction_ceiling: float = 60.0                      # % — at this point the loop is unstable
+
+    def __post_init__(self) -> None:
+        """Validate physically-required fields at construction time (issue #9).
+
+        Rules are deliberately permissive — they catch NaN/Inf, wrong
+        shapes, and clearly-impossible physical values (negative
+        densities, zero rate constants, etc.) without enforcing tight
+        operating-range bounds. All current defaults pass.
+        """
+        # nc and the per-species array length
+        if not isinstance(self.nc, (int, np.integer)) or isinstance(self.nc, bool):
+            raise TypeError(f"nc: expected int, got {type(self.nc).__name__}")
+        if self.nc < 1:
+            raise _err("nc", f"must be >= 1; got {self.nc}")
+        n = int(self.nc)
+
+        # R is a positive constant
+        _check_positive("R", self.R)
+
+        # Per-species arrays
+        _check_shape("k0", self.k0, (n,))
+        _check_finite_array("k0", self.k0)
+        if np.any(self.k0 < 0.0):
+            raise _err("k0", "all rate constants must be non-negative")
+
+        _check_shape("Ea", self.Ea, (n,))
+        _check_finite_array("Ea", self.Ea)
+        if np.any(self.Ea < 0.0):
+            raise _err("Ea", "all activation energies must be non-negative")
+
+        _check_shape("ro", self.ro, (n,))
+        _check_finite_array("ro", self.ro)
+        if np.any(self.ro <= 0.0):
+            raise _err("ro", "all densities must be positive")
+
+        _check_shape("M", self.M, (n,))
+        _check_finite_array("M", self.M)
+        if np.any(self.M <= 0.0):
+            raise _err("M", "all molar masses must be positive")
+
+        if self.cpmol is not None:
+            _check_shape("cpmol", self.cpmol, (n,))
+            _check_finite_array("cpmol", self.cpmol)
+            if np.any(self.cpmol < 0.0):
+                raise _err("cpmol", "all heat capacities must be non-negative")
+
+        # Reaction enthalpy vector (can be negative for endothermic / exothermic)
+        _check_shape("dHr", self.dHr, (3,))
+        _check_finite_array("dHr", self.dHr)
+
+        # Composition vectors
+        _check_shape("xo", self.xo, (n,))
+        _check_finite_array("xo", self.xo)
+        if np.any(self.xo < 0.0):
+            raise _err("xo", "all oil-stream fractions must be non-negative")
+        _check_shape("xm", self.xm, (n,))
+        _check_finite_array("xm", self.xm)
+        if np.any(self.xm < 0.0):
+            raise _err("xm", "all methanol-stream fractions must be non-negative")
+
+        # Stream scalars (cpmolm is populated by finalize() and stays at
+        # 0.0 until then — skip its check here).
+        for name in ("Mo", "Mm", "roo", "rom", "vmolo", "visco"):
+            _check_positive(name, getattr(self, name))
+
+        # Geometry / hardware
+        for name in ("VR", "aD", "hD", "zF", "cv", "Ppump", "rclean", "np_",
+                     "kvH", "tauvH", "NHmax", "kvo", "tauvo"):
+            _check_positive(name, getattr(self, name))
+
+        # Fouling kinetics
+        for name in ("k_f0", "E_a_f", "k_decay", "ffa_ref", "alpha_clean"):
+            _check_nonneg(name, getattr(self, name))
+
+        # Quality dynamics
+        for name in ("k_fame", "k_water", "k_iv"):
+            _check_nonneg(name, getattr(self, name))
+        for name in ("fame_eq", "water_eq", "iv_eq"):
+            _check_nonneg(name, getattr(self, name))
+        for name in ("ffa_feed_noise", "water_feed_noise", "iv_feed_noise"):
+            _check_nonneg(name, getattr(self, name))
+
+        # Actuator wear kinetics
+        _check_nonneg("k_pump_wear", self.k_pump_wear)
+        _check_nonneg("p_pump_wear", self.p_pump_wear)
+        _check_nonneg("pump_health_floor", self.pump_health_floor)
+        _check_nonneg("pump_health_trip_threshold", self.pump_health_trip_threshold)
+        if self.pump_health_floor > self.pump_health_trip_threshold:
+            raise _err(
+                "pump_health_floor",
+                f"must be <= pump_health_trip_threshold "
+                f"({self.pump_health_floor} > {self.pump_health_trip_threshold})",
+            )
+        _check_nonneg("k_valve_stiction", self.k_valve_stiction)
+        _check_nonneg("valve_stiction_ceiling", self.valve_stiction_ceiling)
 
     def finalize(self) -> None:
         """Recompute derived quantities that depend on M and ro."""
@@ -369,6 +533,115 @@ class ProcessFaults:
     fouling_mode_active_end_t: float = -1.0                    # sim time at which the active window expires
     fouling_mode_active_seed: int | None = None                 # optional seed for the ARMAX RNG (reproducibility)
 
+    def __post_init__(self) -> None:
+        """Validate ``ProcessFaults`` at construction time (issue #9).
+
+        Permissive: catches NaN/Inf, negative physical quantities, wrong
+        shapes, and out-of-range enum-like fields. All current defaults
+        pass — the byte-identical fingerprint contract is preserved.
+        """
+        # Filter physics
+        _check_nonneg("clog_fraction", self.clog_fraction)
+        _check_positive("DPclean", self.DPclean)
+        _check_nonneg("filter_std", self.filter_std)
+        _check_positive("ratio_robs_r", self.ratio_robs_r)
+        _check_in_set("fouling", self.fouling, (0, 1))
+        _check_shape("foulingpar", self.foulingpar, (1,))
+        _check_finite_array("foulingpar", self.foulingpar)
+        if float(self.foulingpar[0]) < 0.0:
+            raise _err("foulingpar", "must be non-negative")
+
+        # Quality latching
+        if self.quality_lag_mode not in ("lab", "online"):
+            raise _err(
+                "quality_lag_mode",
+                f"must be 'lab' or 'online'; got {self.quality_lag_mode!r}",
+            )
+        _check_positive("lab_cycle_s", self.lab_cycle_s)
+        _check_positive("online_cycle_s", self.online_cycle_s)
+        _check_nonneg("lab_noise_fame", self.lab_noise_fame)
+        _check_nonneg("lab_noise_water", self.lab_noise_water)
+        _check_nonneg("lab_noise_iv", self.lab_noise_iv)
+
+        # Disturbance profile
+        _check_finite("ambient_t_mean_k", self.ambient_t_mean_k)
+        _check_nonneg("ambient_t_amplitude_k", self.ambient_t_amplitude_k)
+        _check_positive("ambient_t_period_s", self.ambient_t_period_s)
+        _check_finite("cw_t_mean_k", self.cw_t_mean_k)
+        _check_nonneg("cw_t_amplitude_k", self.cw_t_amplitude_k)
+        _check_positive("cw_t_period_s", self.cw_t_period_s)
+        _check_positive("cw_p_nominal_pa", self.cw_p_nominal_pa)
+        _check_finite("cw_p_drift_pa_per_h", self.cw_p_drift_pa_per_h)
+        _check_nonneg("cw_p_noise_pa", self.cw_p_noise_pa)
+        _check_finite("met_cw_track", self.met_cw_track)
+        _check_finite("oil_ambient_track", self.oil_ambient_track)
+
+        # CW pump trip envelope
+        if not (0.0 < self.cw_pump_low_factor <= 1.0):
+            raise _err(
+                "cw_pump_low_factor",
+                f"must be in (0.0, 1.0]; got {self.cw_pump_low_factor!r}",
+            )
+        _check_nonneg("cw_pump_ramp_s", self.cw_pump_ramp_s)
+        _check_nonneg("cw_pump_default_duration_s", self.cw_pump_default_duration_s)
+
+        # Operator knob overlays — None or finite float
+        for name in (
+            "live_ambient_mean_k",
+            "live_ambient_amplitude_k",
+            "live_cw_t_mean_k",
+            "live_cw_p_drift_pa_per_h",
+        ):
+            v = getattr(self, name)
+            if v is not None:
+                _check_finite(name, v)
+
+        # Actuator wear
+        _check_nonneg("pump_wear_rate_per_h", self.pump_wear_rate_per_h)
+        _check_nonneg("pump_wear_flow_exponent", self.pump_wear_flow_exponent)
+        _check_nonneg("pump_wear_floor", self.pump_wear_floor)
+        _check_nonneg("pump_health_trip_threshold", self.pump_health_trip_threshold)
+        if self.pump_wear_floor > self.pump_health_trip_threshold:
+            raise _err(
+                "pump_wear_floor",
+                f"must be <= pump_health_trip_threshold "
+                f"({self.pump_wear_floor} > {self.pump_health_trip_threshold})",
+            )
+        _check_nonneg("valve_stiction_rate_pct_per_h", self.valve_stiction_rate_pct_per_h)
+        _check_nonneg("valve_stiction_floor_pct", self.valve_stiction_floor_pct)
+        _check_nonneg("valve_stiction_ceiling_pct", self.valve_stiction_ceiling_pct)
+        if self.valve_stiction_floor_pct > self.valve_stiction_ceiling_pct:
+            raise _err(
+                "valve_stiction_floor_pct",
+                f"must be <= valve_stiction_ceiling_pct "
+                f"({self.valve_stiction_floor_pct} > {self.valve_stiction_ceiling_pct})",
+            )
+
+        # NIR/IR spectrum sensor
+        _check_positive("spctr_t", self.spctr_t)
+        _check_in_set("spctr_cs", self.spctr_cs, (0, 1, 2, 3))
+        _check_finite("spctr_snr_db", self.spctr_snr_db)
+        _check_nonneg("spctr_k", self.spctr_k)
+        _check_nonneg("spctr_drift_a", self.spctr_drift_a)
+        _check_nonneg("spctr_drift_b", self.spctr_drift_b)
+        _check_nonneg("spctr_drift_c", self.spctr_drift_c)
+        if self.spectra_ref_path is not None and not isinstance(
+            self.spectra_ref_path, (str, os.PathLike)
+        ):
+            raise TypeError(
+                "spectra_ref_path: expected str or os.PathLike or None, "
+                f"got {type(self.spectra_ref_path).__name__}"
+            )
+
+        # Fouling-mode windows
+        _check_in_set("fouling_mode", self.fouling_mode, (0, 1, 2, 3, 4, 5))
+        _check_in_set(
+            "fouling_mode_active_mode", self.fouling_mode_active_mode, (0, 4, 5)
+        )
+        _check_nonneg("fouling_ar_eps_std", self.fouling_ar_eps_std)
+        _check_positive("fouling_mode_default_window_s", self.fouling_mode_default_window_s)
+        _check_finite("fouling_mode_active_end_t", self.fouling_mode_active_end_t)
+
 
 # -----------------------------------------------------------------------------
 # Sensor faults
@@ -433,6 +706,77 @@ class SensorFaults:
     stuck: dict[int, float] = field(default_factory=dict)
     dropouts: set[int] = field(default_factory=set)
 
+    def __post_init__(self) -> None:
+        """Validate ``SensorFaults`` at construction time (issue #9).
+
+        Permissive: catches NaN/Inf, wrong-shape arrays, negative
+        noise std, and non-bool signal arrays. All current defaults
+        pass.
+        """
+        if not isinstance(self.nsensors, (int, np.integer)) or isinstance(self.nsensors, bool):
+            raise TypeError(
+                f"nsensors: expected int, got {type(self.nsensors).__name__}"
+            )
+        if self.nsensors < 1:
+            raise _err("nsensors", f"must be >= 1; got {self.nsensors}")
+        n = int(self.nsensors)
+
+        # signal / a / b: shape-checked only when provided.
+        for name in ("signal", "a", "b"):
+            v = getattr(self, name)
+            if v is not None:
+                if not isinstance(v, np.ndarray):
+                    raise TypeError(
+                        f"{name}: expected np.ndarray or None, "
+                        f"got {type(v).__name__}"
+                    )
+                _check_shape(name, v, (n,))
+                _check_finite_array(name, v)
+
+        # bool signal — must be all 0/1
+        if self.signal is not None and not np.all((self.signal == 0) | (self.signal == 1)):
+            raise _err("signal", "must be all 0 or 1 (bool-like)")
+
+        # Per-sensor flags / times
+        _check_shape("isIntermit", self.isIntermit, (n,))
+        _check_finite_array("isIntermit", self.isIntermit)
+        _check_shape("tmaxInterm", self.tmaxInterm, (n,))
+        _check_finite_array("tmaxInterm", self.tmaxInterm)
+        if np.any(self.tmaxInterm < 0.0):
+            raise _err("tmaxInterm", "all entries must be non-negative")
+
+        # Noise std must be non-negative
+        _check_shape("noise_std", self.noise_std, (n,))
+        _check_finite_array("noise_std", self.noise_std)
+        if np.any(self.noise_std < 0.0):
+            raise _err("noise_std", "all entries must be non-negative")
+
+        # Live-knob dicts / set: keys must be valid sensor indices.
+        for name in ("drift_b", "bias_b", "bias", "stuck"):
+            d = getattr(self, name)
+            for k in d:
+                if not isinstance(k, (int, np.integer)) or isinstance(k, bool):
+                    raise TypeError(
+                        f"{name}: key must be int sensor index, "
+                        f"got {type(k).__name__}"
+                    )
+                if not (0 <= int(k) < n):
+                    raise _err(
+                        name,
+                        f"key {k!r} is outside the configured range [0, {n})",
+                    )
+        for idx in self.dropouts:
+            if not isinstance(idx, (int, np.integer)) or isinstance(idx, bool):
+                raise TypeError(
+                    f"dropouts: element must be int sensor index, "
+                    f"got {type(idx).__name__}"
+                )
+            if not (0 <= int(idx) < n):
+                raise _err(
+                    "dropouts",
+                    f"element {idx!r} is outside the configured range [0, {n})",
+                )
+
 
 # -----------------------------------------------------------------------------
 # Valve faults (stiction)
@@ -449,6 +793,33 @@ class ValveFaults:
     S: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0]))
     J: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0]))
     uindex: np.ndarray = field(default_factory=lambda: np.array([6, 1]))
+
+    def __post_init__(self) -> None:
+        """Validate ``ValveFaults`` at construction time (issue #9).
+
+        All three arrays must share the same length (one entry per
+        valve). Stiction parameters must be non-negative.
+        """
+        for name in ("S", "J", "uindex"):
+            v = getattr(self, name)
+            if not isinstance(v, np.ndarray):
+                raise TypeError(
+                    f"{name}: expected np.ndarray, got {type(v).__name__}"
+                )
+        n = int(self.S.shape[0])
+        _check_shape("J", self.J, (n,))
+        _check_shape("uindex", self.uindex, (n,))
+        _check_finite_array("S", self.S)
+        _check_finite_array("J", self.J)
+        if np.any(self.S < 0.0):
+            raise _err("S", "all entries must be non-negative")
+        if np.any(self.J < 0.0):
+            raise _err("J", "all entries must be non-negative")
+        # uindex are valve → input channel indices; integers in [0, ninputs).
+        # We don't pin ninputs here (it lives on Parameters.nc=6 upstream),
+        # so just check integer + non-negative.
+        if not np.all((self.uindex >= 0) & (self.uindex < 1000)):
+            raise _err("uindex", "all entries must be non-negative integers")
 
 
 # -----------------------------------------------------------------------------
@@ -475,6 +846,23 @@ class ARMAX:
         [0.0, 0.10, 1.15, 0.0, 0.01, 0.0]
     ))
     unoise: np.ndarray | None = None                          # populated by Simulation
+
+    def __post_init__(self) -> None:
+        """Validate ``ARMAX`` at construction time (issue #9)."""
+        for name in ("phi", "theta", "eta", "unoise_std"):
+            v = getattr(self, name)
+            if not isinstance(v, np.ndarray):
+                raise TypeError(
+                    f"{name}: expected np.ndarray, got {type(v).__name__}"
+                )
+        n = int(self.phi.shape[0])
+        for name in ("phi", "theta", "eta"):
+            _check_shape(name, getattr(self, name), (n,))
+            _check_finite_array(name, getattr(self, name))
+        _check_shape("unoise_std", self.unoise_std, (n,))
+        _check_finite_array("unoise_std", self.unoise_std)
+        if np.any(self.unoise_std < 0.0):
+            raise _err("unoise_std", "all entries must be non-negative")
 
 
 # -----------------------------------------------------------------------------
@@ -504,6 +892,32 @@ class PIDController:
     upper_bound: np.ndarray = field(default_factory=lambda: np.array(
         [65 + 273.15, 40000.0, 100.0, 100.0]
     ))
+
+    def __post_init__(self) -> None:
+        """Validate ``PIDController`` at construction time (issue #9).
+
+        All five arrays must have the canonical length 4 (one entry per
+        loop). ``taui`` must be positive (a zero or negative integral
+        time constant makes the loop diverge). ``taud`` must be
+        non-negative. ``lower_bound <= upper_bound`` per loop.
+        """
+        for name in ("kc", "taui", "taud", "lower_bound", "upper_bound"):
+            v = getattr(self, name)
+            if not isinstance(v, np.ndarray):
+                raise TypeError(
+                    f"{name}: expected np.ndarray, got {type(v).__name__}"
+                )
+            _check_shape(name, v, (4,))
+            _check_finite_array(name, v)
+        if np.any(self.taui <= 0.0):
+            raise _err("taui", "all entries must be positive")
+        if np.any(self.taud < 0.0):
+            raise _err("taud", "all entries must be non-negative")
+        if np.any(self.lower_bound > self.upper_bound):
+            raise _err(
+                "lower_bound",
+                "all entries must be <= the corresponding upper_bound entry",
+            )
 
 
 # -----------------------------------------------------------------------------
@@ -665,6 +1079,63 @@ class Settings:
     live_sp4: float = 0.0
 
     def __post_init__(self) -> None:
+        """Validate ``Settings`` at construction time (issue #9), then
+        seed the live setpoints from the configured sp* values.
+
+        Time axis must satisfy ``tf > ti`` and ``dt > 0``. ``u0``
+        must be a length-6 finite vector. The loop-wiring index arrays
+        (``mode_1b``, ``pvindex_1b``, ``uindex_1b``) must each be length 4
+        with integer entries in ``[0, 6)``.
+        """
+        _check_finite("ti", self.ti)
+        _check_finite("tf", self.tf)
+        if not (self.tf > self.ti):
+            raise _err("tf", f"must be > ti ({self.ti}); got {self.tf}")
+        _check_positive("dt", self.dt)
+
+        if self.u0 is None:
+            raise _err("u0", "must be a numpy array of length 6")
+        if not isinstance(self.u0, np.ndarray):
+            raise TypeError(
+                f"u0: expected np.ndarray, got {type(self.u0).__name__}"
+            )
+        _check_shape("u0", self.u0, (6,))
+        _check_finite_array("u0", self.u0)
+
+        if self.sv0 is not None:
+            if not isinstance(self.sv0, np.ndarray):
+                raise TypeError(
+                    f"sv0: expected np.ndarray or None, got {type(self.sv0).__name__}"
+                )
+            _check_finite_array("sv0", self.sv0)
+
+        for name in ("mode_1b", "pvindex_1b", "uindex_1b"):
+            v = getattr(self, name)
+            if not isinstance(v, np.ndarray):
+                raise TypeError(
+                    f"{name}: expected np.ndarray, got {type(v).__name__}"
+                )
+            _check_shape(name, v, (4,))
+            # The arrays carry 1-based indices from the upstream MATLAB;
+            # require integer-typed or castable, value range loose.
+            if not np.all((v >= 0) & (v < 1000)):
+                raise _err(
+                    name,
+                    "all entries must be non-negative integers < 1000",
+                )
+
+        if not isinstance(self.nic, (int, np.integer)) or isinstance(self.nic, bool):
+            raise TypeError(
+                f"nic: expected int, got {type(self.nic).__name__}"
+            )
+        if self.nic < 1:
+            raise _err("nic", f"must be >= 1; got {self.nic}")
+
+        for name in ("sp1", "sp2", "sp3", "sp4"):
+            _check_finite(name, getattr(self, name))
+
+        # Seed live setpoints from configured sp* values (existing
+        # behavior — preserved verbatim).
         self.live_sp1 = self.sp1
         self.live_sp2 = self.sp2
         self.live_sp3 = self.sp3
