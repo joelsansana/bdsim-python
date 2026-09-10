@@ -4,7 +4,7 @@ Command-line entry point: ``python -m bdsim [seed]``
 Usage:
     python -m bdsim              # run with upstream defaults, seed from system
     python -m bdsim 42           # reproducible run with seed 42
-    python -m bdsim --no-plots   # CSV only, no PNG figures
+    python -m bdsim --no-plots   # CSV only, no figures
 """
 
 from __future__ import annotations
@@ -24,9 +24,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("seed", nargs="?", type=int, default=None,
                         help="RNG seed for reproducible runs.")
     parser.add_argument("--outdir", default="results",
-                        help="Output directory for CSVs and PNGs.")
+                        help="Output directory for CSVs and HTML figures.")
     parser.add_argument("--no-plots", action="store_true",
-                        help="Skip PNG figure generation (CSV only).")
+                        help="Skip HTML figure generation (CSV only).")
     args = parser.parse_args(argv)
 
     results = run(seed=args.seed)
