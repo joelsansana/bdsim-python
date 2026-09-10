@@ -44,6 +44,11 @@ from typing import Any
 import numpy as np
 from scipy.integrate import solve_ivp
 
+from ._step_helpers import (
+    apply_controller_step,
+    apply_disturbances,
+    select_fouling_factor,
+)
 from .config import (
     ARMAX,
     Parameters,
@@ -1306,64 +1311,28 @@ class LiveSimulator:
         # pressure. Skipped entirely when all amplitudes are zero
         # to preserve the legacy byte-identical fingerprint.
         pfaults = self._pfaults
-        if (
-            pfaults.ambient_t_amplitude_k != 0.0
-            or pfaults.cw_t_amplitude_k != 0.0
-            or pfaults.cw_p_drift_pa_per_h != 0.0
-            or pfaults.cw_p_noise_pa != 0.0
-            or pfaults.live_ambient_mean_k is not None
-            or pfaults.live_ambient_amplitude_k is not None
-            or pfaults.live_cw_t_mean_k is not None
-            or pfaults.live_cw_p_drift_pa_per_h is not None
-            # actuator wear: pump_wear multiplies cw_p per-step so the
-            # perturbation block must run even when the sinusoid /
-            # drift / live knobs are all at zero. Symmetric with the
-            # simulation.py driver.
-            or pfaults.pump_wear
-        ):
-            amb, cw_t, cw_p = self._disturbance_track[i - 1, :]
-            # cooling-water pump trip: apply cw_pump_trip override on top of the
-            # baseline CW pressure. The override is single-slot — a
-            # second trip replaces the first. No-op when no override
-            # is active or when the trip has expired.
-            cw_p = self._apply_disturbance_override(
-                float(self._t[i - 1]), float(cw_p)
-            )
-            # actuator wear: multiply cw_p by current pump_health (read
-            # from the previous step's state). pump_health ∈ [0, 1];
-            # at 1.0 the multiplier is 1.0 and cw_p is unaffected.
-            # This is the wear-side effect — the kernel evolves the
-            # state slot, the driver applies the multiplier here so
-            # the Qheat scaling block sees a worn-pump cw_p.
-            if pfaults.pump_wear:
-                cw_p = cw_p * float(self._sv[i - 1, self._pump_health_idx])
-            # operator disturbance knobs: resolve operator-driven knob overlays so
-            # the deviation math uses the same resolved baseline as
-            # the track did. Pull once, use locally.
-            amb_mean_resolved = (
-                pfaults.live_ambient_mean_k
-                if pfaults.live_ambient_mean_k is not None
-                else pfaults.ambient_t_mean_k
-            )
-            cw_mean_resolved = (
-                pfaults.live_cw_t_mean_k
-                if pfaults.live_cw_t_mean_k is not None
-                else pfaults.cw_t_mean_k
-            )
-            self._u[1] = self._u[1] + (cw_t - cw_mean_resolved) * pfaults.met_cw_track
-            self._u[3] = self._u[3] + (amb - amb_mean_resolved) * pfaults.oil_ambient_track
-            if pfaults.qheat_cw_scaling and pfaults.cw_p_nominal_pa > 0.0:
-                self._u[4] = self._u[4] * (cw_p / pfaults.cw_p_nominal_pa)
+        apply_disturbances(
+            t_now=float(self._t[i - 1]),
+            i=i,
+            u=self._u,
+            sv=self._sv,
+            pfaults=pfaults,
+            disturbance_track=self._disturbance_track,
+            use_pump_wear=pfaults.pump_wear,
+            pump_health_idx=self._pump_health_idx,
+            apply_override=self._apply_disturbance_override,
+        )
 
-        if (i - 1) % settings.nic == 0:
-            mode = settings.mode_1b.astype(bool)
-            for k, ui in enumerate(self._uindexAUTO):
-                meas = self._pvAUTO[k]
-                sp_val = self._sp[i, np.where(mode)[0][k]]
-                # Use the live setpoint if it differs from the pre-built
-                # profile at the current index - this lets ``POST /control``
-                # propagate without rebuilding the SP array.
-                self._u[ui] = self._pid_states[np.where(mode)[0][k]].step(sp_val, meas)
+        apply_controller_step(
+            i=i,
+            u=self._u,
+            pvAUTO=self._pvAUTO,
+            sp=self._sp,
+            mode_1b=settings.mode_1b,
+            uindexAUTO=self._uindexAUTO,
+            pid_states=self._pid_states,
+            nic=settings.nic,
+        )
         self._uv[i, :] = self._u
 
         # ----------------- valve stiction
@@ -1394,31 +1363,17 @@ class LiveSimulator:
         # given fault schedule (issue #8 closed the asymmetry: the
         # batch driver now also routes through FoulingModeStepper when
         # the windowed condition is met).
-        t_now = float(self._t[i - 1])
-        mode_active = (
-            pfaults.fouling_mode_active_mode in (FoulingMode.ARMAX_NOISE,
-                                                 FoulingMode.ARMAX_PURE_NOISE)
-            and t_now < float(pfaults.fouling_mode_active_end_t)
+        applied_factor = select_fouling_factor(
+            t_now=float(self._t[i - 1]),
+            sv=self._sv,
+            pfaults=pfaults,
+            factor_series=self._factor,
+            i=i,
+            fouling_stepper=self._fouling_stepper,
+            fouling_mode_rng=self._fouling_mode_rng,
+            use_dynamic_alpha=self._use_dynamic_alpha,
         )
-        if self._use_dynamic_alpha:
-            applied_factor = float(self._sv[i - 1, 21])
-            self._rhs.set_factor(applied_factor)
-        elif mode_active:
-            # xRG is sv[5] (reactor glycerol mole fraction, 0-based).
-            # Falls back to 0.0 if the state slot is unavailable
-            # (e.g. legacy 21-component state with quality_state=False).
-            xrg = float(self._sv[i - 1, 5]) if self._sv.shape[1] > 5 else 0.0
-            factor_windowed, _ = self._fouling_stepper.step(
-                t=t_now,
-                mode=int(pfaults.fouling_mode_active_mode),
-                xRG=xrg,
-                rng=self._fouling_mode_rng,
-            )
-            applied_factor = factor_windowed
-            self._rhs.set_factor(applied_factor)
-        else:
-            applied_factor = float(self._factor[i])
-            self._rhs.set_factor(applied_factor)
+        self._rhs.set_factor(applied_factor)
         # fouling-mode windows: record the applied factor so callers can inspect
         # which path (continuous α / windowed / static) the kernel
         # used for this step. Cheap (1 float per step).

@@ -29,6 +29,11 @@ import numpy as np
 from numba import njit
 from scipy.integrate import solve_ivp
 
+from ._step_helpers import (
+    apply_controller_step,
+    apply_disturbances,
+    select_fouling_factor,
+)
 from .config import (
     ARMAX,
     Parameters,
@@ -39,7 +44,7 @@ from .config import (
     Settings,
     ValveFaults,
 )
-from .fouling_modes import FoulingMode, FoulingModeStepper
+from .fouling_modes import FoulingModeStepper
 from .ode import AEmodel, _qoil_jit, make_rhs
 from .thermo import side_reactions
 
@@ -579,61 +584,28 @@ def run_with(
         # ``amb / cw_t / cw_p``, so we resolve the knobs once at the
         # top of the conditional. When any knob is non-zero (either
         # baseline profile or live overlay) the kernel runs.
-        if disturbance_track is not None and (
-            pfaults.ambient_t_amplitude_k != 0.0
-            or pfaults.cw_t_amplitude_k != 0.0
-            or pfaults.cw_p_drift_pa_per_h != 0.0
-            or pfaults.cw_p_noise_pa != 0.0
-            or pfaults.live_ambient_mean_k is not None
-            or pfaults.live_ambient_amplitude_k is not None
-            or pfaults.live_cw_t_mean_k is not None
-            or pfaults.live_cw_p_drift_pa_per_h is not None
-            # actuator wear: pump_wear multiplies cw_p per-step, so the
-            # perturbation block must run even when all the
-            # sinusoid / drift / live-knob amplitudes are zero.
-            # Without this, a worn pump would not affect Qheat.
-            or use_pump_wear
-        ):
-            amb, cw_t, cw_p = disturbance_track[i - 1, :]
-            # actuator wear: multiply cw_p by current pump_health (read
-            # from the previous step's state). At pump_health = 1.0
-            # the multiplier is 1.0 and the published pressure is the
-            # nominal; at 0.5 the pump delivers only half the head.
-            # This is the layer 2.4 effect application — the kernel
-            # itself just evolves the state slot, the driver applies
-            # the multiplier here.
-            if use_pump_wear:
-                cw_p = cw_p * sv[i - 1, layer24_base + 0]
-            # operator disturbance knobs: baseline references must match the resolved
-            # means/amps used inside settings.disturbances(). Pull
-            # them once so the deviation math is consistent.
-            amb_mean_resolved = (
-                pfaults.live_ambient_mean_k
-                if pfaults.live_ambient_mean_k is not None
-                else pfaults.ambient_t_mean_k
-            )
-            cw_mean_resolved = (
-                pfaults.live_cw_t_mean_k
-                if pfaults.live_cw_t_mean_k is not None
-                else pfaults.cw_t_mean_k
-            )
-            # Tmet shifts with CW deviation from (resolved) baseline.
-            u[1] = u[1] + (cw_t - cw_mean_resolved) * pfaults.met_cw_track
-            # Toil shifts with ambient deviation from (resolved) baseline.
-            u[3] = u[3] + (amb - amb_mean_resolved) * pfaults.oil_ambient_track
-            # Qheat scales with CW pressure (lower pressure = less heat transfer).
-            if pfaults.qheat_cw_scaling and pfaults.cw_p_nominal_pa > 0.0:
-                u[4] = u[4] * (cw_p / pfaults.cw_p_nominal_pa)
+        apply_disturbances(
+            t_now=float(t[i - 1]),
+            i=i,
+            u=u,
+            sv=sv,
+            pfaults=pfaults,
+            disturbance_track=disturbance_track,
+            use_pump_wear=use_pump_wear,
+            pump_health_idx=layer24_base + 0,
+            apply_override=None,
+        )
 
-        if (i - 1) % settings.nic == 0:
-            for k, ui in enumerate(uindexAUTO):
-                # upstream's pvindex matches uindex ordering, but here we look up
-                # by pvindexAUTO[k] which is the loop measurement index.
-                # Build mapping: uindexAUTO[k] is the manipulated input column;
-                # pvindexAUTO[k] is the controlled measurement row.
-                meas = pvAUTO[k]
-                sp_val = sp[i, np.where(mode)[0][k]]
-                u[ui] = pid_states[np.where(mode)[0][k]].step(sp_val, meas)
+        apply_controller_step(
+            i=i,
+            u=u,
+            pvAUTO=pvAUTO,
+            sp=sp,
+            mode_1b=settings.mode_1b,
+            uindexAUTO=uindexAUTO,
+            pid_states=pid_states,
+            nic=settings.nic,
+        )
         uv[i, :] = u
 
         # ----------------- valve stiction
@@ -664,31 +636,17 @@ def run_with(
         # given fault schedule; the fingerprint contract is preserved
         # because the new tier 2 is bypassed whenever
         # ``fouling_mode_active_mode`` is 0 (the default).
-        t_now = float(t[i - 1])
-        mode_active = (
-            pfaults.fouling_mode_active_mode in (FoulingMode.ARMAX_NOISE,
-                                                 FoulingMode.ARMAX_PURE_NOISE)
-            and t_now < float(pfaults.fouling_mode_active_end_t)
+        applied_factor = select_fouling_factor(
+            t_now=float(t[i - 1]),
+            sv=sv,
+            pfaults=pfaults,
+            factor_series=factor,
+            i=i,
+            fouling_stepper=fouling_stepper,
+            fouling_mode_rng=fouling_mode_rng,
+            use_dynamic_alpha=use_dynamic_alpha,
         )
-        if use_dynamic_alpha:
-            applied_factor = float(sv[i - 1, 21])
-            rhs.set_factor(applied_factor)
-        elif mode_active:
-            # xRG is sv[5] (reactor glycerol mole fraction, 0-based).
-            # Falls back to 0.0 if the state slot is unavailable
-            # (e.g. legacy 21-component state with quality_state=False).
-            xrg = float(sv[i - 1, 5]) if sv.shape[1] > 5 else 0.0
-            factor_windowed, _ = fouling_stepper.step(
-                t=t_now,
-                mode=int(pfaults.fouling_mode_active_mode),
-                xRG=xrg,
-                rng=fouling_mode_rng,
-            )
-            applied_factor = float(factor_windowed)
-            rhs.set_factor(applied_factor)
-        else:
-            applied_factor = float(factor[i])
-            rhs.set_factor(applied_factor)
+        rhs.set_factor(applied_factor)
         factor_applied[i] = applied_factor
         # NB: the `factor` argument is *also* ignored by the JIT when
         # use_dynamic_alpha=True (the RHS uses sv[21] directly). The
