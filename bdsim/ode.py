@@ -116,6 +116,65 @@ def _ode_rhs_jit(t: float, sv: np.ndarray, u: np.ndarray, factor: float,
                  use_pump_wear: bool, use_valve_wear: bool) -> np.ndarray:
     """Right-hand side of the biodiesel ODE system, JIT-compiled.
 
+    .. note::
+        This is a ``@njit``-compiled hot-path kernel. The argument
+        list is **deliberately long and positional** — Numba does
+        not support kwargs or dataclass unpacking in JIT code, so
+        the same parameters that live on :class:`~bdsim.config.Parameters`
+        and the per-step config are passed as plain positional
+        arguments. A contributor adding a parameter MUST update
+        this signature **and** the matching call site in
+        :func:`ODEmodel` below.
+
+    Argument order (must match the call site in :func:`ODEmodel`):
+
+      0. ``t`` (float) — sim time, seconds
+      1. ``sv`` (ndarray) — state vector, shape ``(sv_width,)``
+      2. ``u`` (ndarray) — input vector, shape ``(6,)``
+      3. ``factor`` (float) — heat-exchanger efficiency multiplier
+      4. ``k0`` (ndarray, shape ``(nc,)``) — rate constants
+      5. ``Ea`` (ndarray, shape ``(nc,)``) — activation energies
+      6. ``dHr`` (ndarray, shape ``(3,)``) — reaction enthalpies
+      7. ``cpmol`` (ndarray, shape ``(nc,)``) — molar heat capacities × molar mass
+      8. ``M`` (ndarray, shape ``(nc,)``) — molar masses
+      9. ``vmol`` (ndarray, shape ``(nc,)``) — molar volumes
+     10. ``xm`` (ndarray, shape ``(nc,)``) — methanol feed mole fractions
+     11. ``xo`` (ndarray, shape ``(nc,)``) — oil feed mole fractions
+     12. ``Mo`` (float) — oil molar mass
+     13. ``Mm`` (float) — methanol molar mass
+     14. ``cpmolo`` (float) — oil molar heat capacity
+     15. ``cpmolm`` (float) — methanol molar heat capacity
+     16. ``roo`` (float) — oil density
+     17. ``R_gas`` (float) — universal gas constant
+     18. ``VR`` (float) — reactor volume
+     19. ``aD`` (float) — decanter cross-section
+     20. ``hD`` (float) — decanter height
+     21-23. ``K1F``, ``K2F``, ``K3F`` (float) — filter constants
+     24. ``kvo`` (float) — oil-valve gain
+     25. ``tauvo`` (float) — oil-valve time constant
+     26. ``kvH`` (float) — heavy-phase valve gain
+     27. ``tauvH`` (float) — heavy-phase valve time constant
+     28. ``NHmax`` (float) — heavy-phase max molar flow
+     29-31. ``eta_E``, ``eta_M``, ``eta_G`` (float) — decanter split NN outputs
+     32-36. ``k_f0``, ``E_a_f``, ``k_decay``, ``ffa_ref``, ``alpha_clean`` — HEX fouling kinetics
+     37. ``use_dynamic_alpha`` (bool) — whether the dynamic-α slot is live
+     38-46. ``k_fame``, ``k_water``, ``k_iv``, ``fame_eq``, ``water_eq``, ``iv_eq``, ``ffa_feed_noise``, ``water_feed_noise``, ``iv_feed_noise`` — quality kinetics
+     47. ``use_quality_state`` (bool) — whether the quality slots are live
+     48-52. ``k_pump_wear``, ``p_pump_wear``, ``pump_health_floor``, ``k_valve_stiction``, ``valve_stiction_ceiling`` — actuator wear kinetics
+     53. ``use_pump_wear`` (bool) — whether the pump_health slot is live
+     54. ``use_valve_wear`` (bool) — whether the valve_stiction slot is live
+
+    The :func:`ODEmodel` wrapper below is the **only** intended call
+    site. It runs the decanter split neural network in Python (the
+    network itself is not Numba-compatible) and forwards the three
+    ``eta`` scalars to this kernel. The wrapper also asserts the
+    array shapes before calling so a same-typed argument swap (e.g.
+    ``k0`` vs ``cpmol``, both ``ndarray`` of the same shape) fails
+    loudly at the call boundary instead of producing a wrong-but-
+    plausible trajectory.
+    """
+    """Right-hand side of the biodiesel ODE system, JIT-compiled.
+
     The decanter split neural-network outputs (``eta_E``, ``eta_M``,
     ``eta_G``) are passed as plain floats — the network itself is evaluated
     by the Python driver before each call (see :func:`make_rhs`).
@@ -473,7 +532,50 @@ def ODEmodel(t: float, sv: np.ndarray, p: dict, u: np.ndarray,
 
     The decanter split neural-network call happens here, on the Python side,
     so the JIT kernel can take the three eta values as scalars.
+
+    This wrapper also enforces the **shape** of every array argument
+    (issue #11) — a same-typed argument swap in the long positional
+    list would otherwise produce a wrong-but-plausible trajectory
+    with no error. The shape checks raise ``ValueError`` *before* the
+    JIT call so the failure is at the Python boundary, not deep in a
+    Numba traceback.
     """
+    nc = int(p.nc)
+    # Array-argument shape sanity. The JIT kernel will index into
+    # these arrays, so a shape mismatch produces a confusing
+    # IndexError deep in the Numba traceback; catching it here makes
+    # the diagnostic much clearer.
+    for name, expected in (
+        ("k0", (nc,)), ("Ea", (nc,)), ("cpmol", (nc,)),
+        ("M", (nc,)), ("vmol", (nc,)),
+        ("xm", (nc,)), ("xo", (nc,)),
+        ("dHr", (3,)),
+    ):
+        v = getattr(p, name)
+        if v is None or not isinstance(v, np.ndarray):
+            raise TypeError(
+                f"ODEmodel: p.{name} must be a numpy array, got {type(v).__name__}"
+            )
+        if v.shape != expected:
+            raise ValueError(
+                f"ODEmodel: p.{name} has shape {v.shape}, expected {expected} "
+                f"(nc={nc}); a same-typed argument swap in _ode_rhs_jit's "
+                f"positional list is the most likely cause"
+            )
+    # State and input vectors.
+    if not isinstance(sv, np.ndarray):
+        raise TypeError(
+            f"ODEmodel: sv must be a numpy array, got {type(sv).__name__}"
+        )
+    if not isinstance(u, np.ndarray):
+        raise TypeError(
+            f"ODEmodel: u must be a numpy array, got {type(u).__name__}"
+        )
+    if u.shape != (6,):
+        raise ValueError(
+            f"ODEmodel: u must have shape (6,), got {u.shape}"
+        )
+
     xR = sv[0:6]
     aux = np.sum(xR[3:6])
     x0M = xR[3] / aux

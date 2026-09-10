@@ -531,3 +531,123 @@ def test_validation_does_not_break_default_construction() -> None:
         sim.step()
     assert sim.done
     assert math.isfinite(float(sim._sv[-1, 6]))        # TR finite
+
+
+# ---------------------------------------------------------------------------
+# _ode_rhs_jit wrapper shape assertions (issue #11)
+# ---------------------------------------------------------------------------
+
+
+def test_odEModel_rejects_wrong_k0_shape() -> None:
+    """A wrong-shape ``k0`` raises ``ValueError`` at the Python
+    boundary, not deep in Numba."""
+    from bdsim.ode import ODEmodel
+    p = Parameters()
+    p.finalize()
+    p.k0 = np.array([0.1, 0.2, 0.3])                  # wrong: should be (6,)
+    sv = np.zeros(22)
+    u = np.zeros(6)
+    with pytest.raises(ValueError, match="p.k0 has shape"):
+        ODEmodel(0.0, sv, p, u)
+
+
+def test_odEModel_rejects_wrong_dHr_shape() -> None:
+    """``dHr`` must be length 3 (forward / backward / third reaction)."""
+    from bdsim.ode import ODEmodel
+    p = Parameters()
+    p.finalize()
+    p.dHr = np.array([1000.0, 2000.0])                 # wrong: should be (3,)
+    sv = np.zeros(22)
+    u = np.zeros(6)
+    with pytest.raises(ValueError, match="p.dHr has shape"):
+        ODEmodel(0.0, sv, p, u)
+
+
+def test_odEModel_rejects_wrong_u_shape() -> None:
+    """``u`` must be length 6 (one entry per manipulated variable)."""
+    from bdsim.ode import ODEmodel
+    p = Parameters()
+    p.finalize()
+    sv = np.zeros(22)
+    u = np.zeros(5)                                    # wrong: should be (6,)
+    with pytest.raises(ValueError, match="u must have shape"):
+        ODEmodel(0.0, sv, p, u)
+
+
+def test_odEModel_rejects_non_ndarray_array_field() -> None:
+    """If a per-species array is a list, the wrapper raises
+    ``TypeError`` before the JIT kernel sees it."""
+    from bdsim.ode import ODEmodel
+    p = Parameters()
+    p.finalize()
+    p.k0 = [0.1, 0.1, 0.1, 0.1, 0.1, 0.0]              # list, not ndarray
+    sv = np.zeros(22)
+    u = np.zeros(6)
+    with pytest.raises(TypeError, match="p.k0 must be a numpy array"):
+        ODEmodel(0.0, sv, p, u)
+
+
+def test_odEModel_happy_path() -> None:
+    """With the right shapes, the wrapper returns a derivative of
+    the expected width (the wrapper-level use_*_state flags are
+    passed explicitly so the kernel writes the same slot count the
+    input carries)."""
+    from bdsim.ode import ODEmodel
+    p = Parameters()
+    p.finalize()
+    # Default wrapper flags give a 28-wide state vector (legacy
+    # 21 + dynamic α 1 + quality 6 = 28). The default input sv0
+    # is 21-wide; pad to match the wrapper's flags.
+    sv = np.array(Settings().sv0, dtype=float)
+    if sv.shape[0] < 28:
+        sv = np.concatenate([sv, np.zeros(28 - sv.shape[0])])
+    u = np.zeros(6)
+    out = ODEmodel(
+        0.0, sv, p, u,
+        use_dynamic_alpha=True,
+        use_quality_state=True,
+        use_pump_wear=False,
+        use_valve_wear=False,
+    )
+    assert out.shape == (28,)
+
+
+# ---------------------------------------------------------------------------
+# Issue #11: docstring argument enumeration present
+# ---------------------------------------------------------------------------
+
+
+def test_ode_rhs_jit_docstring_enumerates_arguments() -> None:
+    """The new docstring (issue #11) enumerates the 55-argument
+    positional list so a contributor can't accidentally swap two
+    same-typed arguments without seeing the order explicitly."""
+    import bdsim.ode as ode_mod
+    doc = ode_mod._ode_rhs_jit.__doc__ or ""
+    # Spot-check the canonical order from the docstring.
+    expected_tokens = [
+        "``k0``", "``Ea``", "``dHr``", "``cpmol``", "``M``",
+        "``vmol``", "``xm``", "``xo``",
+        "``Mo``", "``Mm``", "``cpmolo``", "``cpmolm``",
+        "``roo``", "``R_gas``",
+        "``VR``", "``aD``", "``hD``",
+        "``K1F``", "``K2F``", "``K3F``",
+        "``kvo``", "``tauvo``", "``kvH``", "``tauvH``", "``NHmax``",
+        "``eta_E``", "``eta_M``", "``eta_G``",
+        "``k_f0``", "``E_a_f``", "``k_decay``", "``ffa_ref``", "``alpha_clean``",
+        "``use_dynamic_alpha``",
+        "``k_fame``", "``k_water``", "``k_iv``",
+        "``fame_eq``", "``water_eq``", "``iv_eq``",
+        "``ffa_feed_noise``", "``water_feed_noise``", "``iv_feed_noise``",
+        "``use_quality_state``",
+        "``k_pump_wear``", "``p_pump_wear``", "``pump_health_floor``",
+        "``k_valve_stiction``", "``valve_stiction_ceiling``",
+        "``use_pump_wear``", "``use_valve_wear``",
+    ]
+    last_idx = -1
+    for token in expected_tokens:
+        idx = doc.find(token)
+        assert idx > last_idx, (
+            f"token {token!r} should appear after position {last_idx} "
+            f"in the docstring but was found at {idx}"
+        )
+        last_idx = idx
