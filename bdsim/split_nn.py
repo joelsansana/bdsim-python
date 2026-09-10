@@ -11,37 +11,43 @@ Architecture (matches the MATLAB ``split.m`` exactly):
     X_normalized = (X - mn) / st
     hidden = tanh( pesos_w @ X + bias_theta )       # 5 hidden units
     output = pesos_W @ hidden + bias_gamma            # 3 outputs (eta for E, M, G)
+
+Weights are loaded from the bundled ``bdsim/data/split_nn_weights.npz``
+file (issue #12) so a retrain doesn't require editing Python source
+— drop the new ``.npz`` next to the existing one and the simulator
+picks it up at import time.
 """
 
 from __future__ import annotations
+
+from importlib import resources
 
 import numpy as np
 import torch
 from torch import nn
 
-# Hardcoded weights and biases from split.m (numerically faithful port)
-_MN = np.array([0.4429080932784634, 0.1430123456790114, 315.4873799725652])
-_ST = np.array([0.05769114669974407, 0.07483374254327435, 10.3923004820672])
 
-_PESOS_W = np.array([
-    [ 0.0001626573488477621,  0.0001762383521689282,  0.008436427201807458,  0.0001270214941574136, 0.004297765775023732],
-    [ 0.005798439102391745,   0.007933451534695593,  2.26649586627043,    -0.2986375856202046,    0.7311754343879735],
-    [-0.001364318678976015,   0.0007368268046611492, 0.3912844089747987,   0.002646628766137311,   0.1563496596243398],
-])
+def _load_upstream_weights() -> dict[str, np.ndarray]:
+    """Load the upstream split-net weights from the bundled .npz.
+
+    The file is loaded from the package data directory
+    (``bdsim/data/split_nn_weights.npz``) and the same access pattern
+    used for ``spectra_ref.csv`` (see :mod:`bdsim.spectra`).
+    """
+    from io import BytesIO
+    blob = resources.files("bdsim.data").joinpath("split_nn_weights.npz").read_bytes()
+    with np.load(BytesIO(blob)) as data:
+        return {k: np.array(data[k], dtype=np.float64) for k in data.files}
+
+
+_UPSTREAM = _load_upstream_weights()
+_MN = _UPSTREAM["mn"]
+_ST = _UPSTREAM["st"]
+_PESOS_W = _UPSTREAM["pesos_w"]
 _PESOS_W_OUT = _PESOS_W.copy()                                # PyTorch nn.Linear weight is (out, in)
-
-_PESOS_W_HIDDEN = np.array([
-    [-0.2803986419064017,  -0.1333039855614737, -0.4777087005027253],
-    [-1.089354327582992,   -0.569687192601498,   0.2811677238454339],
-    [-0.08556871701830951, -0.9941218009650442,  0.03066753440441023],
-    [ 0.1392959274375281,   0.3224633500842102, -0.06143635056503905],
-    [ 0.07424143386924453,  1.155133146934136,  -0.01735683560849739],
-])
-# _PESOS_W_HIDDEN is already (5, 3), matching nn.Linear(3, 5) weight shape
-
-_BIAS_THETA = np.array([0.6227988072448851, 1.158840062875017, -2.463591740961228,
-                       0.2729954333628518, 2.246274101076976])
-_BIAS_GAMMA = np.array([1.003727297064683, 1.891158698301678, 0.2350237516771797])
+_PESOS_W_HIDDEN = _UPSTREAM["pesos_w_hidden"]
+_BIAS_THETA = _UPSTREAM["bias_theta"]
+_BIAS_GAMMA = _UPSTREAM["bias_gamma"]
 
 
 class DecanterSplitNet(nn.Module):

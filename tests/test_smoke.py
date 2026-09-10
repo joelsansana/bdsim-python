@@ -110,6 +110,23 @@ def test_split_net_freeze_pretrained():
     assert out.shape == (1, 3)
 
 
+def test_split_nn_weights_loaded_from_data_file():
+    """Issue #12: upstream split-net weights live in
+    ``bdsim/data/split_nn_weights.npz``, not inlined Python literals.
+    Drop the .npz and the module fails to import — that is the
+    documented contract."""
+    from bdsim.split_nn import (
+        _BIAS_GAMMA, _BIAS_THETA, _MN, _PESOS_W, _PESOS_W_HIDDEN, _ST,
+    )
+    # Sanity: every constant loaded with the expected shape.
+    assert _MN.shape == (3,)
+    assert _ST.shape == (3,)
+    assert _PESOS_W.shape == (3, 5)
+    assert _PESOS_W_HIDDEN.shape == (5, 3)
+    assert _BIAS_THETA.shape == (5,)
+    assert _BIAS_GAMMA.shape == (3,)
+
+
 # ---------------------------------------------------------------------------
 # End-to-end simulation
 # ---------------------------------------------------------------------------
