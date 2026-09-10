@@ -157,6 +157,15 @@ natercia@eq.uc.pt.
 
 Cite this software (and upstream BDSIM / split-NN references) via [`CITATION.cff`](CITATION.cff).
 
+## Archival DOI (Zenodo)
+
+A versioned, citable Zenodo DOI is set up at first release (issue #21).
+Procedure: in Zenodo, link the GitHub repo (`joelsansana/bdsim-python`),
+then create a GitHub release — Zenodo mints a DOI per release. The DOI
+goes into `CITATION.cff` and a Zenodo badge is added to this README
+on the first cut. Until then, cite via the version in
+`pyproject.toml` / `bdsim/__init__.py:__version__`.
+
 ## Applications
 
 The package was developed to provide a reproducible biodiesel-plant simulation

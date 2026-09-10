@@ -9,6 +9,7 @@ message: >-
 type: software
 title: "bdsim — Biodiesel Process Simulator (Python)"
 version: "1.2.0"
+# doi: "10.5281/zenodo.XXXXXXXX"   # uncomment + fill on first Zenodo release (issue #21)
 license: GPL-3.0-or-later
 abstract: >-
   Faithful Python port of Natércia Fernandes' BDSIM (Coimbra, 2019): a
@@ -52,12 +53,13 @@ references:
     year: 2014
     authors:
       - family-names: Brásio
-        given-names: A. S. R.
+        given-names: "A. S. R."
       - family-names: Romanenko
-        given-names: A.
+        given-names: "A."
       - family-names: Fernandes
         given-names: "N. C. P."
     doi: "10.1007/978-3-319-20328-7_6"
     notes: >-
       Decanter split-fraction neural network (MATLAB split.m); ported in
       bdsim/split_nn.py.
+
