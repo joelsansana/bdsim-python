@@ -528,3 +528,274 @@ def test_step_returns_independent_arrays() -> None:
     rows[0].pv[0] = -999.0
     for later in rows[1:]:
         assert later.pv[0] != -999.0
+
+
+# ---------------------------------------------------------------------------
+# Validated setters for the original fault surface (issue #7)
+# ---------------------------------------------------------------------------
+#
+# These setters are the defense-in-depth path: they refuse NaN/Inf,
+# out-of-range sensor/valve indices, and magnitudes outside the
+# envelope so a bad UI input doesn't silently poison the kernel. The
+# legacy direct-mutation paths (``sim.sensor_faults.bias[i] = ...``)
+# remain supported for backward compatibility.
+
+
+def _make_sim_for_setters() -> LiveSimulator:
+    return LiveSimulator(settings=_make_short_settings(), seed=42)
+
+
+# ---- set_sensor_bias -------------------------------------------------------
+
+
+def test_set_sensor_bias_happy_path() -> None:
+    sim = _make_sim_for_setters()
+    out = sim.set_sensor_bias(0, 1.5)
+    assert out == {"sensor_idx": 0, "previous": 0.0, "current": 1.5}
+    assert sim.sensor_faults.bias[0] == pytest.approx(1.5)
+
+
+def test_set_sensor_bias_overwrites_existing() -> None:
+    sim = _make_sim_for_setters()
+    sim.set_sensor_bias(2, 0.1)
+    out = sim.set_sensor_bias(2, -0.05)
+    assert out["previous"] == pytest.approx(0.1)
+    assert out["current"] == pytest.approx(-0.05)
+
+
+def test_set_sensor_bias_rejects_out_of_range_index() -> None:
+    sim = _make_sim_for_setters()
+    nsensors = sim.sensor_faults.nsensors
+    with pytest.raises(ValueError, match="outside the configured range"):
+        sim.set_sensor_bias(nsensors, 1.0)
+    with pytest.raises(ValueError, match="outside the configured range"):
+        sim.set_sensor_bias(-1, 1.0)
+
+
+def test_set_sensor_bias_rejects_non_integer_index() -> None:
+    sim = _make_sim_for_setters()
+    with pytest.raises(TypeError, match="sensor_idx must be an integer"):
+        sim.set_sensor_bias("0", 1.0)              # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="sensor_idx must be an integer"):
+        sim.set_sensor_bias(0.5, 1.0)              # type: ignore[arg-type]
+    # ``True`` is an int subclass but never a valid index — caught.
+    with pytest.raises(TypeError, match="sensor_idx must be an integer"):
+        sim.set_sensor_bias(True, 1.0)             # type: ignore[arg-type]
+
+
+def test_set_sensor_bias_rejects_non_finite() -> None:
+    sim = _make_sim_for_setters()
+    with pytest.raises(ValueError, match="must be finite"):
+        sim.set_sensor_bias(0, float("nan"))
+    with pytest.raises(ValueError, match="must be finite"):
+        sim.set_sensor_bias(0, float("inf"))
+    with pytest.raises(ValueError, match="must be finite"):
+        sim.set_sensor_bias(0, float("-inf"))
+
+
+def test_set_sensor_bias_rejects_out_of_envelope() -> None:
+    sim = _make_sim_for_setters()
+    with pytest.raises(ValueError, match="outside the envelope"):
+        sim.set_sensor_bias(0, 1e9)
+    with pytest.raises(ValueError, match="outside the envelope"):
+        sim.set_sensor_bias(0, -1e9)
+
+
+def test_set_sensor_bias_rejects_non_numeric() -> None:
+    sim = _make_sim_for_setters()
+    with pytest.raises(ValueError, match="must be a real number"):
+        sim.set_sensor_bias(0, "abc")              # type: ignore[arg-type]
+
+
+def test_clear_sensor_bias_removes_entry() -> None:
+    sim = _make_sim_for_setters()
+    sim.set_sensor_bias(1, 0.25)
+    out = sim.clear_sensor_bias(1)
+    assert out["current"] is None
+    assert out["previous"] == pytest.approx(0.25)
+    assert 1 not in sim.sensor_faults.bias
+
+
+def test_clear_sensor_bias_noop_when_absent() -> None:
+    sim = _make_sim_for_setters()
+    out = sim.clear_sensor_bias(3)
+    assert out["previous"] is None
+    assert out["current"] is None
+
+
+def test_set_sensor_bias_affects_kernel_trajectory() -> None:
+    """End-to-end check: a bias applied via the setter shifts pv[0]."""
+    sim = _make_sim_for_setters()
+    sim.set_sensor_bias(0, 5.0)
+    # Bias on a sensor the controller is closed-loop on should still
+    # shift the published pv[0] by 5.0 (open-loop response — see
+    # existing direct-mutation test). We use the open-loop-friendly
+    # seed=42 and confirm at a single step.
+    sim.step()                                     # warm-up
+    # No further mutations — bias stays in place.
+    last = sim.step()
+    # pv[0] = TR in K; bias = +5 K should appear as +5 above the no-bias run.
+    ref = LiveSimulator(settings=_make_short_settings(), seed=42)
+    while not ref.done:
+        ref_last = ref.step()
+        if ref.t > sim.t - 1e-9:
+            break
+    assert last.pv[0] - ref_last.pv[0] == pytest.approx(5.0, abs=1e-9)
+
+
+# ---- set_sensor_stuck ------------------------------------------------------
+
+
+def test_set_sensor_stuck_happy_path() -> None:
+    sim = _make_sim_for_setters()
+    out = sim.set_sensor_stuck(1, 123.0)
+    assert out == {"sensor_idx": 1, "previous": None, "current": 123.0}
+    assert sim.sensor_faults.stuck[1] == pytest.approx(123.0)
+
+
+def test_set_sensor_stuck_rejects_negative_time() -> None:
+    sim = _make_sim_for_setters()
+    with pytest.raises(ValueError, match="outside the envelope"):
+        sim.set_sensor_stuck(0, -1.0)
+
+
+def test_set_sensor_stuck_rejects_too_far_future() -> None:
+    sim = _make_sim_for_setters()
+    with pytest.raises(ValueError, match="outside the envelope"):
+        sim.set_sensor_stuck(0, 1e20)
+
+
+def test_set_sensor_stuck_rejects_non_finite() -> None:
+    sim = _make_sim_for_setters()
+    with pytest.raises(ValueError, match="must be finite"):
+        sim.set_sensor_stuck(0, float("nan"))
+
+
+def test_set_sensor_stuck_rejects_out_of_range_index() -> None:
+    sim = _make_sim_for_setters()
+    nsensors = sim.sensor_faults.nsensors
+    with pytest.raises(ValueError, match="outside the configured range"):
+        sim.set_sensor_stuck(nsensors + 1, 0.0)
+
+
+def test_clear_sensor_stuck_removes_entry() -> None:
+    sim = _make_sim_for_setters()
+    sim.set_sensor_stuck(2, 50.0)
+    out = sim.clear_sensor_stuck(2)
+    assert out["previous"] == pytest.approx(50.0)
+    assert out["current"] is None
+    assert 2 not in sim.sensor_faults.stuck
+
+
+# ---- add/remove_sensor_dropout --------------------------------------------
+
+
+def test_add_sensor_dropout_happy_path() -> None:
+    sim = _make_sim_for_setters()
+    out = sim.add_sensor_dropout(2)
+    assert out == {"sensor_idx": 2, "added": True}
+    assert 2 in sim.sensor_faults.dropouts
+
+
+def test_add_sensor_dropout_idempotent() -> None:
+    sim = _make_sim_for_setters()
+    sim.add_sensor_dropout(0)
+    out = sim.add_sensor_dropout(0)
+    assert out == {"sensor_idx": 0, "added": False}
+
+
+def test_add_sensor_dropout_rejects_out_of_range() -> None:
+    sim = _make_sim_for_setters()
+    nsensors = sim.sensor_faults.nsensors
+    with pytest.raises(ValueError, match="outside the configured range"):
+        sim.add_sensor_dropout(nsensors)
+
+
+def test_remove_sensor_dropout_removes_when_present() -> None:
+    sim = _make_sim_for_setters()
+    sim.add_sensor_dropout(1)
+    out = sim.remove_sensor_dropout(1)
+    assert out == {"sensor_idx": 1, "removed": True}
+    assert 1 not in sim.sensor_faults.dropouts
+
+
+def test_remove_sensor_dropout_idempotent() -> None:
+    sim = _make_sim_for_setters()
+    out = sim.remove_sensor_dropout(1)
+    assert out == {"sensor_idx": 1, "removed": False}
+
+
+def test_dropout_setter_affects_quality() -> None:
+    """End-to-end: dropout via the setter → pv NaN, quality=bad."""
+    sim = LiveSimulator(
+        settings=Settings(ti=0.0, tf=300.0, dt=5.0), seed=42
+    )
+    sim.add_sensor_dropout(3)
+    while not sim.done:
+        r = sim.step()
+    assert np.isnan(r.pv[3])
+    assert r.quality[3] == "bad"
+
+
+# ---- set_valve_stiction ----------------------------------------------------
+
+
+def test_set_valve_stiction_updates_both() -> None:
+    sim = _make_sim_for_setters()
+    out = sim.set_valve_stiction(0, S=2.0, J=1.5)
+    assert out["valve_idx"] == 0
+    assert out["S"] == {"previous": 0.0, "current": 2.0}
+    assert out["J"] == {"previous": 0.0, "current": 1.5}
+    assert sim.valve_faults.S[0] == pytest.approx(2.0)
+    assert sim.valve_faults.J[0] == pytest.approx(1.5)
+
+
+def test_set_valve_stiction_updates_only_S() -> None:
+    sim = _make_sim_for_setters()
+    sim.set_valve_stiction(1, S=5.0)
+    out = sim.set_valve_stiction(1, J=3.0)
+    assert "S" not in out                          # S untouched this call
+    assert out["J"] == {"previous": 0.0, "current": 3.0}
+    assert sim.valve_faults.S[1] == pytest.approx(5.0)
+    assert sim.valve_faults.J[1] == pytest.approx(3.0)
+
+
+def test_set_valve_stiction_requires_at_least_one() -> None:
+    sim = _make_sim_for_setters()
+    with pytest.raises(ValueError, match="at least one of S or J"):
+        sim.set_valve_stiction(0)
+
+
+def test_set_valve_stiction_rejects_out_of_range_index() -> None:
+    sim = _make_sim_for_setters()
+    nvalves = len(sim.valve_faults.S)
+    with pytest.raises(ValueError, match="outside the configured range"):
+        sim.set_valve_stiction(nvalves, S=1.0)
+    with pytest.raises(ValueError, match="outside the configured range"):
+        sim.set_valve_stiction(-1, S=1.0)
+
+
+def test_set_valve_stiction_rejects_negative_or_oversize() -> None:
+    sim = _make_sim_for_setters()
+    with pytest.raises(ValueError, match="outside the envelope"):
+        sim.set_valve_stiction(0, S=-0.1)
+    with pytest.raises(ValueError, match="outside the envelope"):
+        sim.set_valve_stiction(0, S=200.0)
+    with pytest.raises(ValueError, match="outside the envelope"):
+        sim.set_valve_stiction(0, J=-1.0)
+
+
+def test_set_valve_stiction_rejects_non_finite() -> None:
+    sim = _make_sim_for_setters()
+    with pytest.raises(ValueError, match="must be finite"):
+        sim.set_valve_stiction(0, S=float("nan"))
+    with pytest.raises(ValueError, match="must be finite"):
+        sim.set_valve_stiction(0, J=float("inf"))
+
+
+def test_set_valve_stiction_rejects_non_integer_index() -> None:
+    sim = _make_sim_for_setters()
+    with pytest.raises(TypeError, match="valve_idx must be an integer"):
+        sim.set_valve_stiction("0", S=1.0)        # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="valve_idx must be an integer"):
+        sim.set_valve_stiction(0.0, S=1.0)        # type: ignore[arg-type]

@@ -37,6 +37,7 @@ must stay byte-identical. The regression test for that contract lives at
 
 from __future__ import annotations
 
+import math
 import time
 from typing import Any
 
@@ -67,6 +68,28 @@ from .simulation import (
 )
 from .thermo import side_reactions
 
+# Defense-in-depth envelopes for the validated live-mutation setters
+# (issue #7). These are intentionally generous: the goal is to catch
+# NaN / Inf and clearly-unphysical inputs (e.g. 1e308 from a UI bug),
+# not to enforce tight operating-range bounds. The dashboard can still
+# push reasonable fault values; the setters refuse only inputs that
+# would silently poison the Numba hot loop.
+_SENSOR_BIAS_LIMIT: float = 1.0e6       # measurement units (K, m, kg/s, etc.)
+_SENSOR_STUCK_TIME_LIMIT: float = 1.0e15   # sim seconds (≥ 30 Myr — far past any run)
+_VALVE_STICTION_S_LIMIT: float = 100.0  # deadband width, % of stroke
+_VALVE_STICTION_J_LIMIT: float = 100.0  # jump size, % of stroke
+# Per-channel ``Settings.u0`` envelope (lo, hi). Each channel has its
+# own physical units; the bounds are "absurd but finite" rather than
+# tight operating-range bounds.
+_U0_CHANNEL_LIMITS: tuple[tuple[float, float], ...] = (
+    (0.0, 100.0),       # vinputo  (%)
+    (200.0, 500.0),     # Tmet     (K)
+    (0.0, 1.0e4),       # Fmet     (kg/h)
+    (200.0, 500.0),     # Toil     (K)
+    (0.0, 1.0e8),       # Qheat    (W)
+    (0.0, 100.0),       # vinputH  (%)
+)
+
 
 class LiveSimulator:
     """Stateful, per-step biodiesel process simulator.
@@ -93,6 +116,16 @@ class LiveSimulator:
     Everything else (``sensor_faults.a`` / ``.b`` / ``.signal``, the batch
     intermittency machinery) is set up at construction and then
     read-only for the lifetime of the run.
+
+    For defense-in-depth, the validated setters
+    :meth:`set_sensor_bias`, :meth:`clear_sensor_bias`,
+    :meth:`set_sensor_stuck`, :meth:`clear_sensor_stuck`,
+    :meth:`add_sensor_dropout`, :meth:`remove_sensor_dropout`, and
+    :meth:`set_valve_stiction` are the recommended path for external
+    callers (e.g. a dashboard endpoint). They refuse non-finite values
+    and out-of-range indices, raising :class:`ValueError` instead of
+    silently propagating bad input into the Numba hot loop. Direct
+    attribute mutation is preserved for backward compatibility.
 
     Examples
     --------
@@ -482,6 +515,275 @@ class LiveSimulator:
                 "ceiling": float(pfaults.valve_stiction_ceiling_pct),
             }
         return out
+
+    # ------------------------------------------------------------------ #
+    # Validated setters for the original fault surface (issue #7)
+    # ------------------------------------------------------------------ #
+    #
+    # The "live mutation surface" docstring above documents that
+    # external callers can mutate ``sensor_faults.bias`` / ``.stuck`` /
+    # ``.dropouts`` and ``valve_faults.S`` / ``.J`` directly between
+    # ``step()`` calls. Direct mutation is preserved for backward
+    # compatibility (existing tests and the dashboard rely on it), but
+    # it offers no defense against bad input — a NaN, an Inf, or a
+    # sensor index outside the configured range silently propagates
+    # through the Numba hot loop and either poisons the trajectory or
+    # surfaces as a downstream Numba error with no useful context.
+    #
+    # The setters below are the validated path. They:
+    # - refuse non-finite floats (NaN, Inf, ±inf);
+    # - refuse sensor / valve indices outside the configured range;
+    # - refuse sensor bias values outside ``±_SENSOR_BIAS_LIMIT``
+    #   (1e6 measurement units — far past any realistic fault);
+    # - refuse stuck timestamps that are negative or beyond the sim
+    #   horizon envelope (``_SENSOR_STUCK_TIME_LIMIT``);
+    # - refuse valve S / J outside ``[0, 100]`` % (matches the
+    #   stiction physical bound);
+    # - refuse u0 vectors of wrong shape or with non-finite /
+    #   per-channel-out-of-envelope entries.
+    #
+    # The setters write into the same dicts / sets / arrays that
+    # direct mutation would write into, so the byte-identical kernel
+    # contract is preserved.
+
+    def set_sensor_bias(
+        self, sensor_idx: int, value: float
+    ) -> dict[str, Any]:
+        """Validated mid-run sensor bias setter.
+
+        Parameters
+        ----------
+        sensor_idx
+            Zero-based sensor index. Must lie in ``[0, nsensors)``.
+        value
+            Additive offset in measurement units. Must be finite and
+            satisfy ``|value| <= _SENSOR_BIAS_LIMIT`` (1e6).
+
+        Returns
+        -------
+        dict
+            ``{"sensor_idx": ..., "previous": ..., "current": ...}``
+            for caller audit (matches the operator-knob dict shape).
+
+        Raises
+        ------
+        ValueError
+            If ``sensor_idx`` is out of range or ``value`` is not
+            finite or outside the envelope.
+        """
+        if not isinstance(sensor_idx, (int, np.integer)) or isinstance(sensor_idx, bool):
+            raise TypeError(
+                f"sensor_idx must be an integer; got {type(sensor_idx).__name__}"
+            )
+        nsensors = int(self.sensor_faults.nsensors)
+        idx = int(sensor_idx)
+        if not (0 <= idx < nsensors):
+            raise ValueError(
+                f"sensor_idx={idx} is outside the configured range [0, {nsensors})"
+            )
+        try:
+            v = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"sensor bias must be a real number; got {value!r}"
+            ) from exc
+        if not math.isfinite(v):
+            raise ValueError(f"sensor bias must be finite; got {v!r}")
+        if abs(v) > _SENSOR_BIAS_LIMIT:
+            raise ValueError(
+                f"sensor bias {v!r} is outside the envelope "
+                f"[{-_SENSOR_BIAS_LIMIT}, {_SENSOR_BIAS_LIMIT}] measurement units"
+            )
+        prev = float(self.sensor_faults.bias.get(idx, 0.0))
+        self.sensor_faults.bias[idx] = v
+        return {"sensor_idx": idx, "previous": prev, "current": v}
+
+    def clear_sensor_bias(self, sensor_idx: int) -> dict[str, Any]:
+        """Remove the bias entry for ``sensor_idx`` (no-op if absent)."""
+        if not isinstance(sensor_idx, (int, np.integer)) or isinstance(sensor_idx, bool):
+            raise TypeError(
+                f"sensor_idx must be an integer; got {type(sensor_idx).__name__}"
+            )
+        idx = int(sensor_idx)
+        prev = self.sensor_faults.bias.pop(idx, None)
+        return {"sensor_idx": idx, "previous": prev, "current": None}
+
+    def set_sensor_stuck(
+        self, sensor_idx: int, t: float
+    ) -> dict[str, Any]:
+        """Validated mid-run sensor stuck-event setter.
+
+        ``t`` is the sim time at which the sensor became stuck; the
+        kernel holds the last-published value from that moment
+        forward (sticky until cleared).
+
+        Parameters
+        ----------
+        sensor_idx
+            Zero-based sensor index. Must lie in ``[0, nsensors)``.
+        t
+            Sim time in seconds. Must be finite and ``>= 0`` and
+            within ``[0, _SENSOR_STUCK_TIME_LIMIT]``.
+
+        Returns
+        -------
+        dict
+            ``{"sensor_idx": ..., "previous": ..., "current": ...}``.
+        """
+        if not isinstance(sensor_idx, (int, np.integer)) or isinstance(sensor_idx, bool):
+            raise TypeError(
+                f"sensor_idx must be an integer; got {type(sensor_idx).__name__}"
+            )
+        idx = int(sensor_idx)
+        nsensors = int(self.sensor_faults.nsensors)
+        if not (0 <= idx < nsensors):
+            raise ValueError(
+                f"sensor_idx={idx} is outside the configured range [0, {nsensors})"
+            )
+        try:
+            tv = float(t)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"stuck timestamp must be a real number; got {t!r}"
+            ) from exc
+        if not math.isfinite(tv):
+            raise ValueError(f"stuck timestamp must be finite; got {tv!r}")
+        if tv < 0.0 or tv > _SENSOR_STUCK_TIME_LIMIT:
+            raise ValueError(
+                f"stuck timestamp {tv!r} is outside the envelope "
+                f"[0.0, {_SENSOR_STUCK_TIME_LIMIT}] sim seconds"
+            )
+        prev = self.sensor_faults.stuck.get(idx, None)
+        self.sensor_faults.stuck[idx] = tv
+        return {"sensor_idx": idx, "previous": prev, "current": tv}
+
+    def clear_sensor_stuck(self, sensor_idx: int) -> dict[str, Any]:
+        """Remove the stuck entry for ``sensor_idx`` (no-op if absent)."""
+        if not isinstance(sensor_idx, (int, np.integer)) or isinstance(sensor_idx, bool):
+            raise TypeError(
+                f"sensor_idx must be an integer; got {type(sensor_idx).__name__}"
+            )
+        idx = int(sensor_idx)
+        prev = self.sensor_faults.stuck.pop(idx, None)
+        return {"sensor_idx": idx, "previous": prev, "current": None}
+
+    def add_sensor_dropout(self, sensor_idx: int) -> dict[str, Any]:
+        """Validated mid-run sensor dropout adder.
+
+        The sensor will output NaN with OPC quality ``"bad"`` until
+        :meth:`remove_sensor_dropout` is called.
+
+        Returns
+        -------
+        dict
+            ``{"sensor_idx": ..., "added": bool}`` — ``added`` is
+            ``False`` if the sensor was already in the dropout set
+            (idempotent no-op, no error).
+        """
+        if not isinstance(sensor_idx, (int, np.integer)) or isinstance(sensor_idx, bool):
+            raise TypeError(
+                f"sensor_idx must be an integer; got {type(sensor_idx).__name__}"
+            )
+        idx = int(sensor_idx)
+        nsensors = int(self.sensor_faults.nsensors)
+        if not (0 <= idx < nsensors):
+            raise ValueError(
+                f"sensor_idx={idx} is outside the configured range [0, {nsensors})"
+            )
+        if idx in self.sensor_faults.dropouts:
+            return {"sensor_idx": idx, "added": False}
+        self.sensor_faults.dropouts.add(idx)
+        return {"sensor_idx": idx, "added": True}
+
+    def remove_sensor_dropout(self, sensor_idx: int) -> dict[str, Any]:
+        """Remove ``sensor_idx`` from the dropout set (idempotent)."""
+        if not isinstance(sensor_idx, (int, np.integer)) or isinstance(sensor_idx, bool):
+            raise TypeError(
+                f"sensor_idx must be an integer; got {type(sensor_idx).__name__}"
+            )
+        idx = int(sensor_idx)
+        removed = False
+        if idx in self.sensor_faults.dropouts:
+            self.sensor_faults.dropouts.discard(idx)
+            removed = True
+        return {"sensor_idx": idx, "removed": removed}
+
+    def set_valve_stiction(
+        self,
+        valve_idx: int,
+        S: float | None = None,
+        J: float | None = None,
+    ) -> dict[str, Any]:
+        """Validated mid-run valve stiction setter.
+
+        Either ``S`` (deadband width, % of stroke), ``J`` (jump size,
+        % of stroke), or both may be provided. Both are clipped to
+        ``[0.0, _VALVE_STICTION_*_LIMIT]`` and must be finite. The
+        other parameter (if omitted) is left untouched.
+
+        Parameters
+        ----------
+        valve_idx
+            Zero-based valve index. Must lie in
+            ``[0, len(valve_faults.S))``.
+        S
+            New deadband width in ``%`` of stroke. ``None`` leaves the
+            current value alone.
+        J
+            New jump size in ``%`` of stroke. ``None`` leaves the
+            current value alone.
+
+        Returns
+        -------
+        dict
+            ``{"valve_idx": ..., "S": {"previous", "current"},
+            "J": {"previous", "current"}}``. Only the keys actually
+            updated are present in the inner dicts.
+        """
+        if not isinstance(valve_idx, (int, np.integer)) or isinstance(valve_idx, bool):
+            raise TypeError(
+                f"valve_idx must be an integer; got {type(valve_idx).__name__}"
+            )
+        idx = int(valve_idx)
+        nvalves = len(self.valve_faults.S)
+        if not (0 <= idx < nvalves):
+            raise ValueError(
+                f"valve_idx={idx} is outside the configured range [0, {nvalves})"
+            )
+        result: dict[str, Any] = {"valve_idx": idx}
+        if S is not None:
+            try:
+                sv = float(S)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"valve S must be a real number; got {S!r}") from exc
+            if not math.isfinite(sv):
+                raise ValueError(f"valve S must be finite; got {sv!r}")
+            if not (0.0 <= sv <= _VALVE_STICTION_S_LIMIT):
+                raise ValueError(
+                    f"valve S={sv!r} is outside the envelope "
+                    f"[0.0, {_VALVE_STICTION_S_LIMIT}]"
+                )
+            prev = float(self.valve_faults.S[idx])
+            self.valve_faults.S[idx] = sv
+            result["S"] = {"previous": prev, "current": sv}
+        if J is not None:
+            try:
+                jv = float(J)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"valve J must be a real number; got {J!r}") from exc
+            if not math.isfinite(jv):
+                raise ValueError(f"valve J must be finite; got {jv!r}")
+            if not (0.0 <= jv <= _VALVE_STICTION_J_LIMIT):
+                raise ValueError(
+                    f"valve J={jv!r} is outside the envelope "
+                    f"[0.0, {_VALVE_STICTION_J_LIMIT}]"
+                )
+            prev = float(self.valve_faults.J[idx])
+            self.valve_faults.J[idx] = jv
+            result["J"] = {"previous": prev, "current": jv}
+        if S is None and J is None:
+            raise ValueError("set_valve_stiction: at least one of S or J must be provided")
+        return result
 
     # ------------------------------------------------------------------
     # fouling-mode windows: windowed fouling mode (modes 4 / 5) mutators
