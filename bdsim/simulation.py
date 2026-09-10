@@ -39,6 +39,7 @@ from .config import (
     Settings,
     ValveFaults,
 )
+from .fouling_modes import FoulingMode, FoulingModeStepper
 from .ode import AEmodel, _qoil_jit, make_rhs
 from .thermo import side_reactions
 
@@ -494,6 +495,41 @@ def run_with(
         lab_period_s = pfaults.lab_cycle_s
     factor = _fouling(t, pfaults.fouling, pfaults.foulingpar)
 
+    # fouling-mode windows: windowed five-mode fouling stepper. The
+    # batch driver now mirrors the LiveSimulator priority system
+    # (issue #8): when ``pfaults.fouling_mode_active_mode`` is set to
+    # 4 or 5 and the current sim time is before
+    # ``fouling_mode_active_end_t``, the stepper's ``factor`` overrides
+    # the static series for that step. The stepper is allocated
+    # eagerly so the kernel can take the same code path as the live
+    # driver; when the windowed condition is never satisfied (the
+    # default), the stepper is unused and the trajectory is byte-
+    # identical to the pre-#8 batch behaviour.
+    fouling_stepper = FoulingModeStepper(
+        foulingpar=pfaults.foulingpar,
+        ar_eps_std=pfaults.fouling_ar_eps_std,
+        xRG_weight=pfaults.fouling_mode_xRG_weight,
+    )
+    if pfaults.fouling_mode_active_seed is not None:
+        fouling_mode_rng = np.random.default_rng(
+            int(pfaults.fouling_mode_active_seed)
+        )
+    else:
+        fouling_mode_rng = np.random.default_rng()
+    # factor_applied: per-step recording of which path the kernel
+    # actually used (continuous α / windowed mode 4-5 / static
+    # legacy). Mirrors LiveSimulator._factor_history and is what
+    # callers see as ``Results.factor``.
+    factor_applied = np.empty(lt, dtype=float)
+    # factor at t=0. With dynamic fouling the initial α is 0.05 →
+    # factor = 1/(1+0.05). Legacy mode: factor[0] = 1
+    # (no fouling at t=0). Windowed mode is inactive at t=0 so the
+    # priority system collapses to (dynamic α) OR (static legacy).
+    if use_dynamic_alpha:
+        factor_applied[0] = float(sv[0, 21])
+    else:
+        factor_applied[0] = float(factor[0])
+
     # Valve stiction state
     nvalves = len(vfaults.uindex)
     valve_duOLD = np.zeros(nvalves)
@@ -619,16 +655,41 @@ def run_with(
         uu = u.copy()
         uu[vfaults.uindex - 1] = vpos[i, :]
         rhs.set_u(uu)
-        # dynamic fouling: factor selection depends on the fouling mode.
-        # Dynamic path: the RHS itself reads α from sv[21], so the
-        # pre-baked factor argument is irrelevant; pass the previous
-        # step's α for parity with the legacy call signature.
-        # Legacy path: factor[i] from the pre-baked series drives the
-        # Theat equation exactly as before.
+        # dynamic fouling / fouling-mode windows: factor selection with explicit
+        # priority. Mirrors LiveSimulator (issue #8):
+        #   1) continuous α (dynamic fouling) — when fouling_dynamic=True
+        #   2) windowed mode 4/5 (fouling-mode windows) — when fouling_mode_active
+        #   3) static legacy factor[i] — pre-baked series
+        # Both paths now produce the same factor trajectory for any
+        # given fault schedule; the fingerprint contract is preserved
+        # because the new tier 2 is bypassed whenever
+        # ``fouling_mode_active_mode`` is 0 (the default).
+        t_now = float(t[i - 1])
+        mode_active = (
+            pfaults.fouling_mode_active_mode in (FoulingMode.ARMAX_NOISE,
+                                                 FoulingMode.ARMAX_PURE_NOISE)
+            and t_now < float(pfaults.fouling_mode_active_end_t)
+        )
         if use_dynamic_alpha:
-            rhs.set_factor(sv[i - 1, 21])
+            applied_factor = float(sv[i - 1, 21])
+            rhs.set_factor(applied_factor)
+        elif mode_active:
+            # xRG is sv[5] (reactor glycerol mole fraction, 0-based).
+            # Falls back to 0.0 if the state slot is unavailable
+            # (e.g. legacy 21-component state with quality_state=False).
+            xrg = float(sv[i - 1, 5]) if sv.shape[1] > 5 else 0.0
+            factor_windowed, _ = fouling_stepper.step(
+                t=t_now,
+                mode=int(pfaults.fouling_mode_active_mode),
+                xRG=xrg,
+                rng=fouling_mode_rng,
+            )
+            applied_factor = float(factor_windowed)
+            rhs.set_factor(applied_factor)
         else:
-            rhs.set_factor(factor[i])
+            applied_factor = float(factor[i])
+            rhs.set_factor(applied_factor)
+        factor_applied[i] = applied_factor
         # NB: the `factor` argument is *also* ignored by the JIT when
         # use_dynamic_alpha=True (the RHS uses sv[21] directly). The
         # value passed here is just a placeholder for the legacy branch.
@@ -768,5 +829,5 @@ def run_with(
         tclean=np.array(tclean),
         quality=quality_latched[:-1, :],
         disturbances=disturbances_out,
-        factor=factor[:-1],
+        factor=factor_applied[:-1],
     )

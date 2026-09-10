@@ -26,6 +26,15 @@ used in the energy balance ``Theat = TR - factor * Qheat / (NR * cpmolR)``:
 Priority when all three are configured:
 ``continuous α  >  windowed mode 4/5  >  static``.
 
+Wired into both the batch driver (``bdsim.simulation.run_with``) and
+``bdsim.live_simulator.LiveSimulator``. Both routes honour the same
+``pfaults.fouling_mode_active_mode`` / ``fouling_mode_active_end_t`` /
+``fouling_mode_active_seed`` triple, so a given fault schedule produces
+the same ``Results.factor`` trajectory whether driven batch or live
+(issue #8). When none of the windowed fields are configured (the
+default), the stepper is allocated but never queried, and the
+trajectory is byte-identical to the pre-#8 batch behaviour.
+
 Modes 0–3 of the upstream are ported for completeness but the bdsim-dashboard
 scenario catalog only exercises modes 4 and 5; modes 1 and 3 are wired into the
 ``FoulingModeStepper`` because they're well-defined and serve as
@@ -35,7 +44,9 @@ kept for parity but flagged as such.
 
 Determinism: modes 4 and 5 are stochastic. Callers must pass a
 ``numpy.random.Generator`` to :meth:`step` so test fixtures can pin
-seeds and scenarios can replay runs.
+seeds and scenarios can replay runs. For batch and live paths alike,
+set ``pfaults.fouling_mode_active_seed`` to a fixed integer for
+reproducible runs.
 """
 
 from __future__ import annotations

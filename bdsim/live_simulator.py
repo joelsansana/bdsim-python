@@ -1391,7 +1391,9 @@ class LiveSimulator:
         #   3) static legacy factor[i] — pre-baked series
         # Selection mirrors the simulation.py priority, so the live and
         # batch paths produce identical factor trajectories for any
-        # given fault schedule.
+        # given fault schedule (issue #8 closed the asymmetry: the
+        # batch driver now also routes through FoulingModeStepper when
+        # the windowed condition is met).
         t_now = float(self._t[i - 1])
         mode_active = (
             pfaults.fouling_mode_active_mode in (FoulingMode.ARMAX_NOISE,
