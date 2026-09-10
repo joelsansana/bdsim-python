@@ -9,6 +9,47 @@ aliases: [bdsim overview, What is this repo]
 
 It models: **filter → reactor → heat exchanger → decanter → washer → dryer**, with sensors, [PID](../Acronyms.md#pid) loops, valve [stiction](../Glossary.md#valve-stiction), and a decanter [split neural network](../20-math/Decanter-split-NN.md).
 
+## Plant flow
+
+```mermaid
+flowchart LR
+    subgraph feed [Feed]
+        O[Oil] --> R
+        M[Methanol] --> R
+    end
+    F[Filter] --> R
+    R[Reactor<br/>6-species<br/>kinetics] -->|TR| HX
+    HX[Heat Exchanger<br/>+ fouling factor] -->|TR / TD| D
+    D[Decanter<br/>+ split NN] --> L[Light phase<br/>→ washer → dryer]
+    D --> HV[Heavy phase<br/>→ recycle]
+    R -.PV TR.-> PID1[PID #1]
+    R -.PV hH.-> PID3[PID #3]
+    D -.PV TD.-> PID2[PID #2]
+    R -.PV Foil.-> PID4[PID #4]
+    PID1 -->|vinputo| R
+    PID2 -->|Tmet| HX
+    PID3 -->|vinputH| D
+    PID4 -->|Qheat| HX
+```
+
+## Code flow
+
+```mermaid
+flowchart TD
+    User[Caller] -->|run or run_with| Sim[bdsim.simulation]
+    User -->|step| Live[bdsim.live_simulator]
+    Sim --> Step[per-step helpers<br/>bdsim._step_helpers]
+    Live --> Step
+    Step --> ODE[Numba @njit RHS<br/>bdsim.ode]
+    ODE --> Thermo[bdsim.thermo]
+    ODE --> Kinetics[bdsim.kinetics]
+    ODE --> Split[bdsim.split_nn<br/>pure-NumPy split]
+    Sim --> Fouling[bdsim.fouling_modes<br/>5-mode stepper]
+    Live --> Fouling
+    Sim --> Spect[comp_spectrum<br/>bdsim.spectra]
+    Live --> Spect
+```
+
 ## What this repo is
 
 - The **simulation engine** (math / plant dynamics)
