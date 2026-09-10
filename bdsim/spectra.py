@@ -46,10 +46,82 @@ Public surface
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from importlib import resources
+from pathlib import Path
 
 import numpy as np
+
+# Maximum size of a user-supplied reference spectra CSV, in bytes.
+# The bundled ``bdsim/data/spectra_ref.csv`` is ~36 KB; a real NIR
+# table for 1000 channels x 100 species in float64 is ~8 MB. 50 MB
+# is generous defense-in-depth against a malicious or runaway override.
+_REFERENCE_SPECTRA_MAX_BYTES: int = 50 * 1024 * 1024
+
+# Whitelist of accepted file extensions. Restricting to common tabular
+# text formats prevents the override path from being pointed at
+# arbitrary binary files (devices, FIFOs, /proc/* on Linux).
+_REFERENCE_SPECTRA_EXTENSIONS: frozenset[str] = frozenset({".csv", ".txt", ".tsv"})
+
+
+def _validate_reference_path(path: str | os.PathLike[str]) -> Path:
+    """Defense-in-depth validation for a user-supplied reference-spectra path.
+
+    Resolves symlinks and ``..`` segments, rejects directories, special
+    files, and unsupported extensions, and caps the file size. The
+    bundled default path (``None``) is handled in the caller and is not
+    validated here.
+
+    Parameters
+    ----------
+    path
+        User-supplied path string or :class:`os.PathLike`.
+
+    Returns
+    -------
+    Path
+        Resolved absolute :class:`Path` to a regular file.
+
+    Raises
+    ------
+    TypeError
+        If ``path`` is not a string or :class:`os.PathLike`.
+    FileNotFoundError
+        If the resolved path does not exist or is not a regular file.
+    ValueError
+        If the file extension is not in the whitelist or the file is
+        larger than :data:`_REFERENCE_SPECTRA_MAX_BYTES`.
+    """
+    if not isinstance(path, (str, os.PathLike)):
+        raise TypeError(
+            f"reference spectra path must be str or os.PathLike, got {type(path).__name__}"
+        )
+
+    resolved = Path(path).expanduser().resolve()
+    if not resolved.is_file():
+        # ``is_file()`` is False for directories, symlink loops, devices,
+        # and missing paths; collapse them into a single error class so
+        # callers don't have to disambiguate.
+        raise FileNotFoundError(
+            f"reference spectra path is not a regular file: {resolved}"
+        )
+
+    if resolved.suffix.lower() not in _REFERENCE_SPECTRA_EXTENSIONS:
+        raise ValueError(
+            f"reference spectra path has unsupported extension "
+            f"{resolved.suffix!r}; expected one of "
+            f"{sorted(_REFERENCE_SPECTRA_EXTENSIONS)}: {resolved}"
+        )
+
+    size = resolved.stat().st_size
+    if size > _REFERENCE_SPECTRA_MAX_BYTES:
+        raise ValueError(
+            f"reference spectra file is too large ({size} bytes > "
+            f"{_REFERENCE_SPECTRA_MAX_BYTES} byte cap): {resolved}"
+        )
+
+    return resolved
 
 # Number of species per location. The MATLAB upstream supports the
 # dryer locations too (sv(22:27), sv(28:33)) but our state vector
@@ -153,12 +225,26 @@ class SpectrumSample:
 def _load_reference_spectra(path: str | None) -> tuple[np.ndarray, np.ndarray]:
     """Load reference spectra from CSV.
 
+    When ``path`` is ``None``, the bundled ``bdsim/data/spectra_ref.csv``
+    is loaded from package resources. When ``path`` is provided, it is
+    validated by :func:`_validate_reference_path` (resolved, extension
+    and size checked, regular file required) before being opened.
+
     Returns
     -------
     (ref_spctrs, wn)
         ``ref_spctrs`` shape ``(6, n_channels)`` — one row per species
         in canonical order TG, DG, MG, M, E, G. ``wn`` is the
         wavenumber axis, shape ``(n_channels,)``.
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``path`` is provided but does not resolve to a regular file.
+    ValueError
+        If ``path`` has an unsupported extension or exceeds the size cap.
+    TypeError
+        If ``path`` is not a string or :class:`os.PathLike`.
 
     The MATLAB upstream reads ``spectra_data = csvread('spectra_ref.csv')``
     and uses ``[DG;E;G;M;MG;TG]`` ordering, then indexes into it
@@ -176,7 +262,12 @@ def _load_reference_spectra(path: str | None) -> tuple[np.ndarray, np.ndarray]:
         wn = np.array([float(x) for x in lines[0].split(",")])
         data = np.loadtxt(StringIO("\n".join(lines[1:])), delimiter=",")
     else:
-        with open(path) as f:
+        # Validate before opening: defense-in-depth against a
+        # path-traversal / arbitrary-file-read primitive if
+        # ``spectra_ref_path`` is ever exposed through a network-facing
+        # surface (e.g. a dashboard endpoint). See issue #22.
+        resolved = _validate_reference_path(path)
+        with open(resolved, encoding="utf-8") as f:
             lines = f.read().strip().splitlines()
         wn = np.array([float(x) for x in lines[0].split(",")])
         data = np.loadtxt(lines[1:], delimiter=",")

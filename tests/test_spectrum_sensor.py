@@ -32,6 +32,7 @@ from bdsim.spectra import (
     SpectrumSample,
     _band_sum,
     _load_reference_spectra,
+    _validate_reference_path,
     comp_spectrum,
 )
 
@@ -328,3 +329,109 @@ def test_band_sum_full_table_returns_sum():
     wn = np.linspace(637.5, 3787.5, 631)
     absorb = np.ones(631)
     assert _band_sum(absorb, wn, 0.0, 5000.0) == pytest.approx(631.0)
+
+
+# ---------------------------------------------------------------------------
+# Defense-in-depth: spectra_ref_path validation (issue #22)
+# ---------------------------------------------------------------------------
+
+def test_validate_reference_path_accepts_bundled_csv(tmp_path):
+    """The bundled spectra_ref.csv passes validation when copied locally."""
+    import bdsim.spectra as spectra_mod
+    bundled = spectra_mod.resources.files("bdsim.data").joinpath("spectra_ref.csv")
+    local = tmp_path / "ref.csv"
+    local.write_bytes(bundled.read_bytes())
+    resolved = _validate_reference_path(local)
+    assert resolved == local.resolve()
+    # Also accepts PathLike (Path) and string inputs interchangeably.
+    assert _validate_reference_path(str(local)) == local.resolve()
+
+
+def test_validate_reference_path_accepts_txt_and_tsv(tmp_path):
+    """Whitelist includes .txt and .tsv, not just .csv."""
+    for ext in (".csv", ".txt", ".tsv", ".CSV"):
+        p = tmp_path / f"ref{ext}"
+        p.write_text("a,b\n1,2\n")
+        resolved = _validate_reference_path(p)
+        assert resolved.is_file()
+
+
+def test_validate_reference_path_rejects_nonexistent(tmp_path):
+    """Missing path → FileNotFoundError."""
+    missing = tmp_path / "does_not_exist.csv"
+    with pytest.raises(FileNotFoundError):
+        _validate_reference_path(missing)
+
+
+def test_validate_reference_path_rejects_directory(tmp_path):
+    """A directory is not a regular file → FileNotFoundError."""
+    with pytest.raises(FileNotFoundError):
+        _validate_reference_path(tmp_path)
+
+
+def test_validate_reference_path_rejects_wrong_extension(tmp_path):
+    """Non-tabular extensions are rejected."""
+    p = tmp_path / "ref.bin"
+    p.write_bytes(b"\x00\x01\x02\x03")
+    with pytest.raises(ValueError, match="unsupported extension"):
+        _validate_reference_path(p)
+    # .py should also be rejected (no code execution via path override).
+    py = tmp_path / "ref.py"
+    py.write_text("# harmless\n")
+    with pytest.raises(ValueError, match="unsupported extension"):
+        _validate_reference_path(py)
+
+
+def test_validate_reference_path_rejects_oversize(monkeypatch, tmp_path):
+    """Files above the size cap are rejected (cap is monkeypatched for speed)."""
+    import bdsim.spectra as spectra_mod
+    p = tmp_path / "ref.csv"
+    p.write_text("a,b\n1,2\n")
+    # Lower the cap so we can exercise the branch with a small file.
+    monkeypatch.setattr(spectra_mod, "_REFERENCE_SPECTRA_MAX_BYTES", 4)
+    with pytest.raises(ValueError, match="too large"):
+        _validate_reference_path(p)
+
+
+def test_validate_reference_path_resolves_dotdot(tmp_path):
+    """``..`` segments are resolved; the canonical absolute path is returned."""
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    csv = subdir / "ref.csv"
+    csv.write_text("a,b\n1,2\n")
+    # Traversal that lands back on the same file: subdir/../subdir/ref.csv
+    traversal = subdir / ".." / "subdir" / "ref.csv"
+    resolved = _validate_reference_path(traversal)
+    assert resolved == csv.resolve()
+    # And the returned path does not contain ".." segments.
+    assert ".." not in resolved.parts
+
+
+def test_validate_reference_path_rejects_non_path_type():
+    """Non-string/PathLike input → TypeError."""
+    with pytest.raises(TypeError):
+        _validate_reference_path(123)
+    with pytest.raises(TypeError):
+        _validate_reference_path(None)
+
+
+def test_load_reference_validates_user_path(tmp_path):
+    """A bogus spectra_ref_path propagates as FileNotFoundError on load."""
+    bogus = tmp_path / "nope.csv"
+    with pytest.raises(FileNotFoundError):
+        _load_reference_spectra(bogus)
+
+
+def test_load_reference_validates_extension(tmp_path):
+    """Wrong extension on an existing file → ValueError."""
+    bad = tmp_path / "ref.exe"
+    bad.write_text("not a spectrum")
+    with pytest.raises(ValueError, match="unsupported extension"):
+        _load_reference_spectra(bad)
+
+
+def test_spectrum_generator_propagates_validation_error(tmp_path):
+    """SpectrumGenerator construction surfaces validation errors early."""
+    bogus = tmp_path / "missing.csv"
+    with pytest.raises(FileNotFoundError):
+        SpectrumGenerator(SpectrumConfig(enabled=True, spectra_ref_path=bogus))
