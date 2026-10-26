@@ -8,3 +8,5 @@ Maintainer utilities (not part of the installable `bdsim` package).
 | `run_gold_scenarios_cluster.sh` | Same on anvil+forge (GNU parallel) |
 
 Docs: [`docs/30-engine/Gold-parity-cluster.md`](../docs/30-engine/Gold-parity-cluster.md).
+
+Visual Octave vs Python plots: [`notebooks/gold/`](../notebooks/gold/).

@@ -47,6 +47,8 @@ uv run pytest tests/test_gold_parity.py -m slow -q  # full-week vs gold
 
 Slow tests prefer pre-built `data/results_py/S##`; without them only S00 auto-builds in-process.
 
+Visual parity (nine original BDsim figures, Octave | Python side by side): notebooks under [`notebooks/gold/`](../../notebooks/gold/).
+
 ## Design notes
 
 - Solver remains **RK45** (not LSODA); RMSE bands allow Python↔Octave drift.
