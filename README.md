@@ -44,13 +44,13 @@ python -m bdsim                          # upstream defaults, random seed
 python -m bdsim 42                       # reproducible run
 python -m bdsim --no-plots               # Parquet only, no figures
 python -m bdsim 42 --outdir my_results   # custom output directory
-python -m bdsim.scenarios S00            # gold scenario → results_py/S00/
+python -m bdsim.scenarios S00            # gold scenario → data/results_py/S00/
 ./scripts/run_gold_scenarios_cluster.sh SMOKE   # cluster short gold suite
 ```
 
 Outputs (Parquet tables + 9 HTML figures + index.html) are written to
-`results/` by default. Trajectory columns follow the Port_execution
-handbook schema (`t_s`, `TR_C`, …). Open `results/index.html` in any
+`data/results/` by default. Trajectory columns follow the Port_execution
+handbook schema (`t_s`, `TR_C`, …). Open `data/results/index.html` in any
 browser to see all nine figures. Gold parity: see
 [`docs/30-engine/Gold-parity-cluster.md`](docs/30-engine/Gold-parity-cluster.md).
 
@@ -122,7 +122,9 @@ tests/
 ├── test_spectrum_sensor.py    # NIR/IR virtual spectrum sensor
 ├── test_fouling_modes.py      # five-mode fouling stepper (offline)
 └── test_fouling_modes_live.py # LiveSimulator wiring + priority for fouling-mode windows
-results/                # default output directory (created on first run)
+data/results/           # default output directory (created on first run)
+data/results_py/        # Python gold Parquet (S00–S07)
+data/results_octave/    # Octave gold ASCII datasets
 ```
 
 ## Differences from the MATLAB upstream

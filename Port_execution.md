@@ -3,7 +3,7 @@
 > **Status (bdsim-python):** Core dynamics ported. Solver remains **RK45** (not LSODA).
 > Final exports are **Parquet** (`bdsim.io_parquet`). Gold scenarios S00–S07:
 > `python -m bdsim.scenarios` / `scripts/run_gold_scenarios_cluster.sh`.
-> Reference ASCII: `data/gold_dataset_1w/`. Parity tests: `tests/test_gold_parity.py`
+> Reference ASCII: `data/results_octave/gold_dataset_1w/`. Parity tests: `tests/test_gold_parity.py`
 > (tolerant RMSE). Details: `.cursor/Port_review.md`, `docs/30-engine/Gold-parity-cluster.md`.
 
 How to port BDsim to Python while **preserving physical and chemical dynamics**, choosing equivalent libraries, writing **Parquet** results, and proving replication against Octave gold.
@@ -23,7 +23,7 @@ Companion docs:
 
 **Goals**
 
-- Python trajectories that match Octave gold: `results_ref/S##/` → `results_py/S##/` on `states`, `inputs`, `measurements`, `setpoints`, and `tclean` when present.
+- Python trajectories that match Octave gold: `data/results_octave/gold_dataset_*/S##/` → `data/results_py/S##/` on `states`, `inputs`, `measurements`, `setpoints`, and `tclean` when present.
 - Same phenomenological fingerprints as in `.cursor/simulation.md` §3 and [`tests/test_phenomenology.m`](tests/test_phenomenology.m).
 - Python writes **Parquet** (`*.parquet`), not legacy ASCII (optional ASCII debug export only).
 
@@ -133,8 +133,8 @@ Use the same `ti`, `tf`, `dt`, `nic`, `sv0`, `u0`, PID/ARMAX, `pfaults` / `sfaul
 
 | Role | Directory |
 |------|-----------|
-| Octave gold | `results_ref/S##/` (ASCII today) |
-| Python | `results_py/S##/` (Parquet) |
+| Octave gold | `data/results_octave/gold_dataset_1w/S##/` (ASCII) |
+| Python | `data/results_py/S##/` (Parquet) |
 
 ### Unit conversions (must match `BDsim.m`)
 
@@ -177,7 +177,7 @@ Row count and `t_s` grid must match Octave **after** the same end-trim / `uv` sh
 
 1. Run Octave → ASCII under `results_ref/S##/`.
 2. Convert ASCII → Parquet (helper in the Python package; same schema as above).
-3. Run Python → Parquet under `results_py/S##/`.
+3. Run Python → Parquet under `data/results_py/S##/`.
 4. Load both with pandas/pyarrow; check column names, then RMSE / fingerprints.
 
 ---
@@ -220,7 +220,7 @@ Tune RMSE bands on S00 once LSODE-like tolerances are fixed; fingerprints first,
 6. Outer discrete loop + SciPy `LSODA`/`odeint` on each `[t_i, t_{i+1}]` with held `u`.
 7. Replicate unit conversions, end-trim, `uv` shift.
 8. **Parquet writer** (named columns, `float64`, snappy).
-9. **ASCII→Parquet gold converter** for `results_ref/`.
+9. **ASCII→Parquet gold converter** for `data/results_octave/`.
 10. Parity on **S00**, then S03 → S02 → S01 → S04 → S05 → S06–S07.
 11. Decide S06 RNG strategy; document it.
 12. CI: SMOKE + short phenomenology on Parquet.

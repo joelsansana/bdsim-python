@@ -143,7 +143,7 @@ All 14 smoke tests still pass.
 Full-week gold parity failed on `measurements.Foil_kg_h` with RMSE ~6k
 despite matching means/std and identical plateau values — correlation
 ≈ −0.5. Oil valve lift showed the same ~3-sample lead vs
-`data/gold_dataset_1w`.
+`data/results_octave/gold_dataset_1w`.
 
 ### Root cause
 

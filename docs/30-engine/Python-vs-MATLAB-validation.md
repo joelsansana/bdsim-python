@@ -7,7 +7,7 @@ aliases: [MATLAB validation, Octave validation, upstream comparison]
 
 ## Gold suite (primary)
 
-Octave week-long gold ASCII lives under `data/gold_dataset_1w/S00`…`S07`
+Octave week-long gold ASCII lives under `data/results_octave/gold_dataset_1w/S00`…`S07`
 (gitignored). Python writes handbook **Parquet** via
 `python -m bdsim.scenarios` / `scripts/run_gold_scenarios*.sh`.
 Comparison: `tests/test_gold_parity.py` (tolerant RMSE; RK45 kept —

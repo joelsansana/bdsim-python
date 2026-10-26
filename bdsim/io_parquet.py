@@ -99,7 +99,7 @@ def results_to_frames(
 
 def save_parquet(
     results: Results,
-    outdir: str | Path = "results",
+    outdir: str | Path = "data/results",
     *,
     octave_uv_shift: bool = True,
 ) -> dict[str, Path]:

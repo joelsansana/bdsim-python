@@ -54,7 +54,7 @@ bdsim = ["data/*.csv", "data/*.npz"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "slow: full-week gold parity (needs data/gold_dataset_1w and/or results_py)",
+    "slow: full-week gold parity (needs data/results_octave/gold_dataset_1w and/or data/results_py)",
 ]
 
 # -----------------------------------------------------------------------------

@@ -18,7 +18,7 @@ BD_NPOINTS="${BD_NPOINTS:-}"
 BD_TF="${BD_TF:-}"
 BD_DT="${BD_DT:-30}"
 BD_SEED="${BD_SEED:-42}"
-BD_OUTDIR="${BD_OUTDIR:-results_py}"
+BD_OUTDIR="${BD_OUTDIR:-data/results_py}"
 
 if [[ $# -eq 1 && "$1" == "SMOKE" ]]; then
   SCENARIOS=(S00 S01 S02 S03 S04 S05 S06 S07)

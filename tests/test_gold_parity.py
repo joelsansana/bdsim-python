@@ -1,7 +1,7 @@
-"""Gold Parquet parity vs ``data/gold_dataset_1w`` (Octave ASCII).
+"""Gold Parquet parity vs ``data/results_octave/gold_dataset_1w`` (Octave ASCII).
 
 RK45 vs Octave ``lsode`` and NumPy vs Octave RNG drift are expected.
-Full-week RMSE uses pre-built ``results_py/S##`` when present (cluster);
+Full-week RMSE uses pre-built ``data/results_py/S##`` when present (cluster);
 otherwise S00 can be generated in-process. SMOKE always runs short horizons.
 """
 
@@ -24,8 +24,8 @@ from bdsim.io_parquet import (
 from bdsim.scenarios.gold import SCENARIO_IDS, run_gold_scenario
 
 ROOT = Path(__file__).resolve().parents[1]
-GOLD_ROOT = ROOT / "data" / "gold_dataset_1w"
-RESULTS_PY = ROOT / "results_py"
+GOLD_ROOT = ROOT / "data" / "results_octave" / "gold_dataset_1w"
+RESULTS_PY = ROOT / "data" / "results_py"
 
 # Tolerant bands: solver drift dominates; not byte-identical.
 _REL = {
@@ -140,7 +140,7 @@ def test_phenomenology_smoke_s00_s01_s02_s03(tmp_path):
 def test_full_week_rmse_vs_gold(sid, tmp_path):
     """Compare full-week Python Parquet to Octave gold ASCII.
 
-    Prefers pre-built ``results_py/S##`` from the cluster runner; otherwise
+    Prefers pre-built ``data/results_py/S##`` from the cluster runner; otherwise
     generates the scenario in-process (slow).
     """
     gold = load_ascii_gold(GOLD_ROOT / sid)
@@ -199,7 +199,7 @@ def test_full_week_rmse_vs_gold(sid, tmp_path):
                 )
                 if col == "Foil_kg_h":
                     assert "tclean" in py and len(py["tclean"]) >= 1, (
-                        f"{sid}: expected filter-clean events in results_py"
+                        f"{sid}: expected filter-clean events in data/results_py"
                     )
                 continue
             gstd = float(np.nanstd(gold[name][col])) + abs_t
@@ -217,6 +217,6 @@ def test_s01_tclean_present_when_prebuilt():
         pytest.skip("gold S01 has no tclean")
     prebuilt = RESULTS_PY / "S01"
     if not (prebuilt / "measurements.parquet").is_file():
-        pytest.skip("results_py/S01 not pre-built")
+        pytest.skip("data/results_py/S01 not pre-built")
     py = load_parquet_dir(prebuilt)
     assert "tclean" in py and len(py["tclean"]) >= 1

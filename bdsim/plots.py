@@ -44,7 +44,7 @@ _PLOTLY_TEMPLATE = "plotly_white"
 # visualisations only)
 # ---------------------------------------------------------------------------
 
-def save_csv(results: Results, outdir: str | Path = "results") -> dict[str, Path]:
+def save_csv(results: Results, outdir: str | Path = "data/results") -> dict[str, Path]:
     """Write all trajectories to ASCII files matching the upstream format."""
     out = Path(outdir)
     out.mkdir(parents=True, exist_ok=True)
@@ -309,7 +309,7 @@ _FIGS = [
 ]
 
 
-def plot_all(results: Results, outdir: str | Path = "results",
+def plot_all(results: Results, outdir: str | Path = "data/results",
              show: bool = False) -> list[Path]:
     """Replicate the upstream nine-figure block in Plotly.
 

@@ -54,7 +54,9 @@ tests/
 ├── test_fouling_modes.py    # five-mode fouling stepper (offline)
 └── test_fouling_modes_live.py # LiveSimulator wiring + priority for fouling-mode windows
 
-results/                # default output dir (created on first run)
+data/results/           # default demo output (created on first run)
+data/results_py/        # Python gold Parquet (S00–S07)
+data/results_octave/    # Octave gold ASCII (gold_dataset_1w, …)
 docs/                   # Obsidian knowledge base (docs/Home.md); see docs/README.md
 scripts/                # optional maintainer utilities (not part of the package)
 NOTES.md                # historical: upstream-faithful bugs we found and fixed

@@ -10,20 +10,20 @@
 #
 # Env: BD_TF, BD_DT, BD_NPOINTS, BD_SEED, BD_OUTDIR, NODES, BD_LOG_SYNC_SEC,
 #      BD_CLUSTER_CONFIG
-# Syncs logs/ and results_py/ from SSH remotes.
+# Syncs logs/ and data/results_py/ from SSH remotes.
 # Docs: docs/30-engine/Gold-parity-cluster.md
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-mkdir -p results_py logs
+mkdir -p data/results_py logs
 
 BD_NPOINTS="${BD_NPOINTS:-}"
 BD_TF="${BD_TF:-}"
 BD_DT="${BD_DT:-30}"
 BD_SEED="${BD_SEED:-42}"
-BD_OUTDIR="${BD_OUTDIR:-results_py}"
+BD_OUTDIR="${BD_OUTDIR:-data/results_py}"
 
 CONFIG="${BD_CLUSTER_CONFIG:-$ROOT/config/cluster.yaml}"
 if [[ ! -f "${CONFIG}" ]]; then

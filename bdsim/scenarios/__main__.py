@@ -1,4 +1,4 @@
-"""CLI: ``python -m bdsim.scenarios S00|…|all [--npoints N] [--outdir results_py]``."""
+"""CLI: ``python -m bdsim.scenarios S00|…|all [--npoints N] [--outdir data/results_py]``."""
 
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--outdir",
-        default="results_py",
-        help="Root directory for per-scenario Parquet folders (default: results_py).",
+        default="data/results_py",
+        help="Root directory for per-scenario Parquet folders (default: data/results_py).",
     )
     parser.add_argument(
         "--npoints",

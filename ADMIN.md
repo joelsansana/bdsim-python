@@ -133,13 +133,13 @@ ls /tmp/bdsim-check/                     # expect *.parquet tables
 
 ## Output artifacts
 
-`python3 -m bdsim <seed>` produces in `--outdir` (default `results/`):
+`python3 -m bdsim <seed>` produces in `--outdir` (default `data/results/`):
 
 - `inputs.parquet`, `states.parquet`, `measurements.parquet`, `setpoints.parquet` — handbook schema (`t_s`, `TR_C`, …); see `Port_execution.md` §6
 - 9 Plotly HTML figures (when `--no-plots` is NOT set) — `fig01_tr_td_toil_qheat.html` through `fig09_setpoint_loop.html`
 - `index.html` — combined view of all 9 figures
 
-Gold scenarios: `python -m bdsim.scenarios S00` or `./scripts/run_gold_scenarios_cluster.sh` → `results_py/S##/`. See [`docs/30-engine/Gold-parity-cluster.md`](docs/30-engine/Gold-parity-cluster.md).
+Gold scenarios: `python -m bdsim.scenarios S00` or `./scripts/run_gold_scenarios_cluster.sh` → `data/results_py/S##/`. See [`docs/30-engine/Gold-parity-cluster.md`](docs/30-engine/Gold-parity-cluster.md).
 
 ## Deployment context
 

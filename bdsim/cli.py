@@ -24,7 +24,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("seed", nargs="?", type=int, default=None,
                         help="RNG seed for reproducible runs.")
-    parser.add_argument("--outdir", default="results",
+    parser.add_argument("--outdir", default="data/results",
                         help="Output directory for Parquet tables and HTML figures.")
     parser.add_argument("--no-plots", action="store_true",
                         help="Skip HTML figure generation (Parquet only).")
