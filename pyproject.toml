@@ -23,6 +23,8 @@ dependencies = [
     "numba>=0.58,<1.0",
     "scipy>=1.11,<2.0",
     "plotly>=6.9.0,<7.0",
+    "pandas>=2.0,<3.0",
+    "pyarrow>=14.0,<23.0",
 ]
 
 [project.optional-dependencies]
@@ -51,6 +53,9 @@ bdsim = ["data/*.csv", "data/*.npz"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: full-week gold parity (needs data/gold_dataset_1w and/or results_py)",
+]
 
 # -----------------------------------------------------------------------------
 # Ruff

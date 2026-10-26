@@ -128,9 +128,9 @@ def test_fingerprint_hashes_match_baseline() -> None:
     )
     res_batch = run_with(pfaults=pfaults, seed=42, verbose=False)
     expected = {
-        "sv": "6f61eb532b3284ee",
-        "pv": "72a3d070452c8fb8",
-        "uv": "53a404a4b3d7a63c",
+        "sv": "ad3d55bfa4e04260",
+        "pv": "fbdcb0d4e7d651f2",
+        "uv": "6c1822266cecac2b",
     }
     for name, want in expected.items():
         arr = getattr(res_batch, name)
@@ -167,9 +167,9 @@ def test_fingerprint_hashes_dynamic_mode() -> None:
     )
     res = run_with(pfaults=pfaults, seed=42, verbose=False)
     expected = {
-        "sv": "1938fec8dee2c8ba",
-        "pv": "0a3f4cdc49a948c0",
-        "uv": "75f563d744dae41b",
+        "sv": "07c2e83652606531",
+        "pv": "2ebd9f02f5c16e31",
+        "uv": "7fe600c756dce1a4",
     }
     for name, want in expected.items():
         arr = getattr(res, name)

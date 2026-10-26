@@ -42,14 +42,17 @@ PEP 668 fallback only: `pip install --user --break-system-packages -e .`
 ```bash
 python -m bdsim                          # upstream defaults, random seed
 python -m bdsim 42                       # reproducible run
-python -m bdsim --no-plots               # CSV files only
+python -m bdsim --no-plots               # Parquet only, no figures
 python -m bdsim 42 --outdir my_results   # custom output directory
+python -m bdsim.scenarios S00            # gold scenario → results_py/S00/
+./scripts/run_gold_scenarios_cluster.sh SMOKE   # cluster short gold suite
 ```
 
-Outputs (4 CSVs + 9 HTML figures + index.html) are written to `results/`
-by default. CSV column headers match the upstream `BDsim.m` byte-for-byte
-so existing MATLAB plotting code can consume them unchanged. Open
-`results/index.html` in any browser to see all nine figures.
+Outputs (Parquet tables + 9 HTML figures + index.html) are written to
+`results/` by default. Trajectory columns follow the Port_execution
+handbook schema (`t_s`, `TR_C`, …). Open `results/index.html` in any
+browser to see all nine figures. Gold parity: see
+[`docs/30-engine/Gold-parity-cluster.md`](docs/30-engine/Gold-parity-cluster.md).
 
 ## Documentation
 

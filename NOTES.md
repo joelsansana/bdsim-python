@@ -135,3 +135,34 @@ fig03: Tmet 46.61–53.40 °C  order_lift_oil 39.62–41.93 %
 ```
 
 All 14 smoke tests still pass.
+
+## 3. Foil / oil-valve phase vs Octave gold (FIXED 2026-10-26)
+
+### Symptom
+
+Full-week gold parity failed on `measurements.Foil_kg_h` with RMSE ~6k
+despite matching means/std and identical plateau values — correlation
+≈ −0.5. Oil valve lift showed the same ~3-sample lead vs
+`data/gold_dataset_1w`.
+
+### Root cause
+
+Python PID tick used `(i - 1) % nic == 0` on the 0-based driver index
+`i` from `for i in range(1, lt)`. Octave `inputs.m` uses
+`~mod(i_m - 1, nic)` with 1-based `i_m` starting at 2, so the first
+controller update is at MATLAB step 5 ≡ Python `i == nic` (4), not
+`i == 1`. Python fired PID one `nic` group early → Foil/lift
+square-wave phase inversion after export alignment.
+
+Secondary: `_intermittence` used MATLAB 1-based `ind1:ind2` formulas
+as 0-based Python slices (off-by-one). Gold calendars now also use
+Octave `heaviside(0) = 0.5`.
+
+### Fix
+
+- `apply_controller_step`: tick when `i % nic == 0`
+- `_intermittence`: `signal[ind1_m - 1:ind2_m]`
+- Gold scenarios: `np.heaviside(x, 0.5)`
+- Fingerprint pins refreshed (intentional drift from nic alignment)
+- S01/S07: Foil/DP/oil-lift family gated on pre-clean window (RK45 vs
+  `lsode` DPclean timing remains irreducible without solver change)

@@ -1,5 +1,11 @@
 # BDsim Octave/MATLAB → Python port — execution handbook
 
+> **Status (bdsim-python):** Core dynamics ported. Solver remains **RK45** (not LSODA).
+> Final exports are **Parquet** (`bdsim.io_parquet`). Gold scenarios S00–S07:
+> `python -m bdsim.scenarios` / `scripts/run_gold_scenarios_cluster.sh`.
+> Reference ASCII: `data/gold_dataset_1w/`. Parity tests: `tests/test_gold_parity.py`
+> (tolerant RMSE). Details: `.cursor/Port_review.md`, `docs/30-engine/Gold-parity-cluster.md`.
+
 How to port BDsim to Python while **preserving physical and chemical dynamics**, choosing equivalent libraries, writing **Parquet** results, and proving replication against Octave gold.
 
 Companion docs:

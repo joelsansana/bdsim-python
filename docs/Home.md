@@ -41,6 +41,8 @@ Junior onboarding hub for the **bdsim** plant simulator. This vault explains *ho
 - [Batch-driver](./30-engine/Batch-driver.md)
 - [Live-simulator](./30-engine/Live-simulator.md)
 - [Fingerprints-and-tests](./30-engine/Fingerprints-and-tests.md)
+- [Python-vs-MATLAB-validation](./30-engine/Python-vs-MATLAB-validation.md) (gold Parquet parity)
+- [Gold-parity-cluster](./30-engine/Gold-parity-cluster.md) (anvil+forge week runs)
 - [Fouling-modes](./30-engine/Fouling-modes.md) (fouling-mode windows five-mode stepper walkthrough)
 
 ### Helpers

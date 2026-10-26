@@ -1,0 +1,14 @@
+# bdsim-python cluster (GNU parallel --sshlogin)
+# Same topology as BDSIM anvil+forge. Override: NODES=... BD_CLUSTER_CONFIG=path
+# Docs: docs/30-engine/Gold-parity-cluster.md  (BDSIM docs/cluster.md for SSH)
+
+workdir: null              # null = repo root
+log_sync_sec: 15           # 0 disables live rsync of logs/results from remotes
+
+nodes:
+  - name: anvil
+    sshlogin: ":"          # local GNU parallel login
+    slots: 4
+  - name: forge
+    sshlogin: "eugeniu@192.168.1.86"
+    slots: 4

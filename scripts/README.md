@@ -1,7 +1,10 @@
 # scripts/
 
-Reserved for optional **maintainer utilities** (one-off diagnostics, data exports, etc.).
+Maintainer utilities (not part of the installable `bdsim` package).
 
-- Not part of the installable `bdsim` package
-- Not required to run the simulator or the test suite
-- Prefer documenting any committed script here with a short comment at the top of the file
+| Script | Purpose |
+|--------|---------|
+| `run_gold_scenarios.sh` | Local S00–S07 gold runs → `results_py/` |
+| `run_gold_scenarios_cluster.sh` | Same on anvil+forge (GNU parallel) |
+
+Docs: [`docs/30-engine/Gold-parity-cluster.md`](../docs/30-engine/Gold-parity-cluster.md).

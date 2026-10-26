@@ -94,11 +94,13 @@ def _intermittence(
             tnew = tt + sfaults.tmaxInterm[k] * np.random.rand()
             tnew = min(tnew - (tnew % dt), tf)
             if np.random.rand() < 0.5:
-                ind1 = round((tt - ti) / dt + 1)
-                ind2 = round((tnew - ti) / dt + 1)
-                signal[ind1:ind2 + 1, k] = 1.0
-                a[ind1:ind2 + 1, k] = 1.0
-                b[ind1:ind2 + 1, k] = 0.0
+                # intermittence.m uses 1-based ind1:ind2 inclusive.
+                # Convert to 0-based Python slices [ind1_m-1 : ind2_m].
+                ind1_m = int(round((tt - ti) / dt + 1))
+                ind2_m = int(round((tnew - ti) / dt + 1))
+                signal[ind1_m - 1:ind2_m, k] = 1.0
+                a[ind1_m - 1:ind2_m, k] = 1.0
+                b[ind1_m - 1:ind2_m, k] = 0.0
             tt = tnew
     return signal, a, b
 
@@ -338,10 +340,24 @@ def run_with(
     armax.unoise_std[2] = armax.unoise_std[2] / p.Mm / 3600.0
 
     sp = np.zeros((lt, 4))
-    sp[:, 0] = settings.sp1
-    sp[:, 1] = settings.sp2
-    sp[:, 2] = settings.sp3
-    sp[:, 3] = settings.sp4 + 100.0 * np.heaviside(t - 5000.0, 1.0)
+    if (
+        not settings.use_demo_schedules
+        and settings.sp_profile is not None
+    ):
+        sp_prof = np.asarray(settings.sp_profile, dtype=float)
+        if sp_prof.shape != (lt, 4):
+            raise ValueError(
+                f"settings.sp_profile: expected shape ({lt}, 4); "
+                f"got {sp_prof.shape}"
+            )
+        sp[:, :] = sp_prof
+    else:
+        sp[:, 0] = settings.sp1
+        sp[:, 1] = settings.sp2
+        sp[:, 2] = settings.sp3
+        sp[:, 3] = settings.sp4
+        if settings.use_demo_schedules:
+            sp[:, 3] = sp[:, 3] + 100.0 * np.heaviside(t - 5000.0, 1.0)
 
     sp[:, 3] = sp[:, 3] / 3600.0                               # kg/h → kg/s
     pid.kc = pid.kc.copy()
@@ -350,16 +366,44 @@ def run_with(
     pid.upper_bound[1] = pid.upper_bound[1] / 1.0              # (no-op, matches upstream)
     pid.lower_bound = pid.lower_bound.copy()
 
-    sfaults.b = np.zeros((lt, sfaults.nsensors))
-    sfaults.b[:, 1] = 5e-6 * (t - 100000.0) * np.heaviside(t - 100000.0, 1.0)
-    sfaults.b[:, 4] = 5e3 * (np.heaviside(t - 60000.0, 1.0)
-                             - np.heaviside(t - 80000.0, 1.0))
-    sfaults.a = np.ones((lt, sfaults.nsensors))
-    sfaults.signal = np.ones((lt, sfaults.nsensors))
+    nsens = sfaults.nsensors
+    if settings.use_demo_schedules:
+        sfaults.b = np.zeros((lt, nsens))
+        sfaults.b[:, 1] = 5e-6 * (t - 100000.0) * np.heaviside(t - 100000.0, 1.0)
+        sfaults.b[:, 4] = 5e3 * (np.heaviside(t - 60000.0, 1.0)
+                                 - np.heaviside(t - 80000.0, 1.0))
+        sfaults.a = np.ones((lt, nsens))
+        sfaults.signal = np.ones((lt, nsens))
+    else:
+        # Gold / custom calendars: keep (lt, n) arrays if provided; else healthy.
+        def _expand_calendar(arr: np.ndarray | None, fill: float) -> np.ndarray:
+            if arr is None:
+                return np.full((lt, nsens), fill)
+            a = np.asarray(arr, dtype=float)
+            if a.ndim == 1:
+                return np.tile(a.reshape(1, -1), (lt, 1))
+            if a.shape[0] != lt or a.shape[1] != nsens:
+                raise ValueError(
+                    f"sfaults calendar: expected shape ({lt}, {nsens}); "
+                    f"got {a.shape}"
+                )
+            return a.copy()
+
+        sfaults.signal = _expand_calendar(sfaults.signal, 1.0)
+        sfaults.a = _expand_calendar(sfaults.a, 1.0)
+        sfaults.b = _expand_calendar(sfaults.b, 0.0)
 
     sfaults.signal, sfaults.a, sfaults.b = _intermittence(
         t, sfaults.signal, sfaults.a, sfaults.b, sfaults
     )
+
+    # Foil bias / noise: settings use kg/h (BDsim.m); convert to kg/s.
+    # Demo path leaves noise_std in the Python kg/s convention (fingerprint).
+    sfaults.b = sfaults.b.copy()
+    sfaults.b[:, 3] = sfaults.b[:, 3] / 3600.0
+    if not settings.use_demo_schedules:
+        sfaults.noise_std = sfaults.noise_std.copy()
+        sfaults.noise_std[3] = sfaults.noise_std[3] / 3600.0
 
     # Force ARMAX coefficients for manipulated variables to zero in AUTO mode
     mode = settings.mode_1b.astype(bool)

@@ -153,7 +153,10 @@ def apply_controller_step(
     Parameters
     ----------
     i
-        Current step index (1-based).
+        Current step index in the Python driver loop
+        (``for i in range(1, lt)``). This equals the 0-based
+        destination row for ``uv[i]`` / ``sv[i]``, which maps to
+        MATLAB ``BDsim.m`` loop index ``i_m = i + 1``.
     u
         Input-vector buffer, shape ``(ninputs,)``. Mutated in place.
     pvAUTO
@@ -172,9 +175,11 @@ def apply_controller_step(
         List of :class:`_PIDState` instances, one per loop.
     nic
         Controller update interval in steps. Controllers step when
-        ``(i - 1) % nic == 0``.
+        ``i % nic == 0``, matching Octave ``inputs.m``
+        ``~mod(i_m - 1, nic)`` with ``i_m = i + 1`` (first tick at
+        Python ``i == nic``, not ``i == 1``).
     """
-    if (i - 1) % nic == 0:
+    if i % nic == 0:
         mode = mode_1b.astype(bool)
         mode_idx = np.where(mode)[0]
         for k, ui in enumerate(uindexAUTO):

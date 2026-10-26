@@ -67,15 +67,15 @@ NOTES.md                # historical: upstream-faithful bugs we found and fixed
 
   | Profile | Construction | `sv` width | Pins (full SHA-256[:16]) |
   |--------|--------------|-------------|----------------------------|
-  | Runtime default (1.2.0+) | `ProcessFaults()` | **30** | batch `sv=691cf51b…` `pv=baedc29f…` `uv=4e4134e4…`; live `sv=80f6f046…` |
-  | Legacy fingerprint | `fouling_dynamic=False`, all masters off | 21 | batch `sv=c8807b23…` `pv=77def506…` `uv=17e62051…`; live `sv=23c3c885…` |
-  | dynamic-fouling fingerprint | `fouling_dynamic=True`, all other masters off | 22 | batch `sv=696531c4…` `pv=3c96ca4f…` `uv=0d9a9673…` |
-  | dynamic-fouling + quality-latching | `fouling_dynamic=True`, `quality_state=True` (no actuator wear, no spectra) | 27 | batch `sv=d663e17d…` (quality latching review pending — see [CHANGELOG.md](CHANGELOG.md) historical notes) |
-  | pump-only actuator wear | `pump_wear=True`, `valve_wear=False`, `fouling_dynamic=True`, `quality_state=False` | 23 | batch `sv=7ddd7aaa…` `pv=e0dba881…` `uv=86c2704f…` |
-  | valve-only actuator wear | `pump_wear=False`, `valve_wear=True`, `fouling_dynamic=True`, `quality_state=False` | 23 | batch `sv=9425d007…` `pv=02296ffa…` `uv=aa146ea3…` |
-  | pump + valve wear | `pump_wear=True`, `valve_wear=True`, `fouling_dynamic=True`, `quality_state=False` | 24 | batch `sv=c092fe08…` `pv=2d26f03f…` `uv=4ef50b9f…` |
-  | external disturbances active | `fouling_dynamic=True`, `ambient_t_amplitude_k` etc. > 0 (all other masters off) | 22 | batch `sv=8865a8c3…`; live `sv=bb763a9b…` |
-  | cooling-water pump trip live | `LiveSimulator` cw_pump_trip mid-run override | 22 | live `sv` matches external disturbances baseline; trip is a single row-removal event |
+| Runtime default (1.2.0+) | `ProcessFaults()` | **30** | batch `sv=65c8e648…` `pv=49d36bb6…` `uv=936439b7…` (updated: Octave-aligned PID `nic` tick) |
+ | Legacy fingerprint | `fouling_dynamic=False`, all masters off | 21 | batch `sv=ad3d55bf…` `pv=fbdcb0d4…` `uv=6c182226…` |
+ | dynamic-fouling fingerprint | `fouling_dynamic=True`, all other masters off | 22 | batch `sv=07c2e836…` `pv=2ebd9f02…` `uv=7fe600c7…` |
+ | dynamic-fouling + quality-latching | `fouling_dynamic=True`, `quality_state=True` (no actuator wear, no spectra) | 27 | (re-pin with suite after nic fix — see tests) |
+ | pump-only actuator wear | `pump_wear=True`, `valve_wear=False`, `fouling_dynamic=True`, `quality_state=False` | 23 | batch `sv=736a8032…` `pv=fc29a420…` `uv=6865d7d6…` |
+ | valve-only actuator wear | `pump_wear=False`, `valve_wear=True`, `fouling_dynamic=True`, `quality_state=False` | 23 | batch `sv=56c453e9…` `pv=3e8783ba…` `uv=bf7ff824…` |
+ | pump + valve wear | `pump_wear=True`, `valve_wear=True`, `fouling_dynamic=True`, `quality_state=False` | 24 | batch `sv=2290bca3…` `pv=694dab99…` `uv=8231d3c9…` |
+ | external disturbances active | amplitudes > 0 (legacy masters off) | 21 | batch `sv=9b102224…` `pv=1bb38dc9…` `uv=2e5a1b88…` |
+ | cooling-water pump trip live | `LiveSimulator` cw_pump_trip mid-run override | — | live short-horizon pins in `tests/test_cw_pump_trip.py` |
 
   Full write-up: `docs/00-orientation/Byte-identical-contract.md`.
 - **Tests run from the bdsim root:** `python3 -m pytest tests/ -q`. Full suite: ~6:40.

@@ -256,9 +256,9 @@ def test_legacy_fingerprint_preserved_when_no_trip() -> None:
     sv_hash = hashlib.sha256(sim._sv.tobytes()).hexdigest()[:16]
     pv_hash = hashlib.sha256(sim._pv.tobytes()).hexdigest()[:16]
     uv_hash = hashlib.sha256(sim._uv.tobytes()).hexdigest()[:16]
-    assert sv_hash == "f37fb5e0f70f5516", f"sv fingerprint drift: {sv_hash}"
-    assert pv_hash == "ee8040fce61b4d10", f"pv fingerprint drift: {pv_hash}"
-    assert uv_hash == "5b444a8250506bb0", f"uv fingerprint drift: {uv_hash}"
+    assert sv_hash == "cd7f6c2e821754f7", f"sv fingerprint drift: {sv_hash}"
+    assert pv_hash == "46030fcff53e2482", f"pv fingerprint drift: {pv_hash}"
+    assert uv_hash == "8b6526ac656e854d", f"uv fingerprint drift: {uv_hash}"
 
 
 @pytest.mark.fingerprint_reference_stack
@@ -287,9 +287,9 @@ def test_legacy_fingerprint_preserved_with_amplitudes_but_no_trip() -> None:
     sv_hash = hashlib.sha256(sim._sv.tobytes()).hexdigest()[:16]
     pv_hash = hashlib.sha256(sim._pv.tobytes()).hexdigest()[:16]
     uv_hash = hashlib.sha256(sim._uv.tobytes()).hexdigest()[:16]
-    assert sv_hash == "13ea81f3af76ec5a", f"sv fingerprint drift: {sv_hash}"
-    assert pv_hash == "04f19dd830b1c8c0", f"pv fingerprint drift: {pv_hash}"
-    assert uv_hash == "20e4814aa2ff62ad", f"uv fingerprint drift: {uv_hash}"
+    assert sv_hash == "58195a363c725b08", f"sv fingerprint drift: {sv_hash}"
+    assert pv_hash == "c5f0553d1f0754b4", f"pv fingerprint drift: {pv_hash}"
+    assert uv_hash == "af62c5939c514e90", f"uv fingerprint drift: {uv_hash}"
 
 
 # --------------------------------------------------------------------------- #

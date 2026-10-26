@@ -5,14 +5,24 @@ aliases: [MATLAB validation, Octave validation, upstream comparison]
 
 # Python-vs-MATLAB validation (issue #20)
 
+## Gold suite (primary)
+
+Octave week-long gold ASCII lives under `data/gold_dataset_1w/S00`…`S07`
+(gitignored). Python writes handbook **Parquet** via
+`python -m bdsim.scenarios` / `scripts/run_gold_scenarios*.sh`.
+Comparison: `tests/test_gold_parity.py` (tolerant RMSE; RK45 kept —
+solver/RNG drift accepted). Cluster workflow: [[Gold-parity-cluster]].
+
+## Legacy npz scaffold
+
 The [byte-identical fingerprint regression](../00-orientation/Byte-identical-contract.md)
 tests prove the Python port is stable **against itself** across
-runs and dependency versions. The "faithful port" claim, however,
-rests on code-reading parity — there is no numerical diff against
-a documented MATLAB/Octave reference run.
+runs and dependency versions. An older optional
+`tests/data/upstream_reference.npz` scaffold remains for a single
+trajectory diff (`tests/test_matlab_validation.py`); it is skipped when
+absent.
 
-This page documents the **procedure for producing the reference
-data** and the **tolerance envelope** the comparison uses.
+This page also documents that **npz** procedure and its tolerance envelope.
 
 ## Reference trajectory (where it lives)
 

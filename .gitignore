@@ -41,9 +41,12 @@ results/states
 results/measurements
 results/setpoints
 results/*.csv
+results/*.parquet
 results/*.html
 results/*.png
 !results/.gitkeep
+results_py/
+logs/
 
 docs/Fernandes2019_BDSIM.pdf
 docs/manual.pdf
@@ -56,3 +59,6 @@ docs/manual.pdf
 
 # Data files
 data/
+
+# Local uv cache (optional)
+.uv-cache/
