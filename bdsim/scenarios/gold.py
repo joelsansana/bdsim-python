@@ -1,8 +1,20 @@
-"""Gold validation scenarios S00–S07 (mirror BDSIM ``scenarios/*.m``).
+"""Gold validation scenarios S00–S15 (mirror BDSIM ``scenarios/*.m``).
 
-Shared defaults: 1 week, ``dt=30``, noise off, all AUTO, legacy 21-wide
-``ProcessFaults`` (Layer masters off). Demo schedules disabled so calendars
-match Octave gold rather than ``user_settings.m``.
+S00–S07: golden suite — 1 week, ``dt=30``, ``nic=4``, noise off, all AUTO.
+S08–S15: extended set (2026-11-16 scenario-review chain, coverage gaps G1–G8 of
+``docs/scenario_coverage.md`` in the Octave repo). They deviate deliberately from
+the golden ``nic`` (see ``SCENARIO_TIMEBASE``): at ``nic=4`` the Foil loop is
+discretely unstable at the golden time base (Octave doc §4bis), so the extended
+scenarios run ``nic=1``; S15 takes the Foil loop to MANUAL. Per-scenario horizons:
+1 week (S08–S10, S12, S13), 1 month (S11, S14), 6 months (S15).
+
+Shared defaults: noise off (unless stated), all AUTO (unless stated), legacy
+21-wide ``ProcessFaults`` (Layer masters off). Demo schedules disabled so
+calendars match Octave gold rather than ``user_settings.m``.
+
+RNG caveat: S08 (sensor noise), S13 (intermittence masks) and S14 (new-filter
+draws) consume random streams. Octave legacy RNG ≠ NumPy at the same seed, so
+those compare at fingerprint level only (Port_execution.md §5).
 """
 
 from __future__ import annotations
@@ -27,8 +39,35 @@ from ..simulation import run_with
 
 T_DAY = 86400.0
 T_WEEK = 7.0 * T_DAY
+T_MONTH = 30.0 * T_DAY
+T_HALFYEAR = 180.0 * T_DAY
 
-SCENARIO_IDS = ("S00", "S01", "S02", "S03", "S04", "S05", "S06", "S07")
+SCENARIO_IDS = (
+    "S00", "S01", "S02", "S03", "S04", "S05", "S06", "S07",
+    "S08", "S09", "S10", "S11", "S12", "S13", "S14", "S15",
+)
+
+# Per-scenario time base (tf [s], dt [s], nic). S00–S07 mirror the golden suite;
+# S08–S15 mirror the extended-scenario headers in the Octave repo
+# (scenarios/GOLD_SCENARIOS.md, "Extended scenarios S08–S15").
+SCENARIO_TIMEBASE: dict[str, tuple[float, float, int]] = {
+    "S00": (T_WEEK, 30.0, 4),
+    "S01": (T_WEEK, 30.0, 4),
+    "S02": (T_WEEK, 30.0, 4),
+    "S03": (T_WEEK, 30.0, 4),
+    "S04": (T_WEEK, 30.0, 4),
+    "S05": (T_WEEK, 30.0, 4),
+    "S06": (T_WEEK, 30.0, 4),
+    "S07": (T_WEEK, 30.0, 4),
+    "S08": (T_WEEK, 30.0, 1),
+    "S09": (T_WEEK, 30.0, 1),
+    "S10": (T_WEEK, 30.0, 1),
+    "S11": (T_MONTH, 60.0, 1),
+    "S12": (T_WEEK, 30.0, 1),
+    "S13": (T_WEEK, 30.0, 1),
+    "S14": (T_MONTH, 60.0, 1),
+    "S15": (T_HALFYEAR, 300.0, 1),
+}
 
 _GOLD_SV0 = np.array([
     0.002455, 0.000553, 0.0000467, 0.42353, 0.43022, 0.14319, 60.4 + 273.15,
@@ -68,6 +107,7 @@ def _quiet_sfaults(
     b: np.ndarray | None = None,
     is_intermit: np.ndarray | None = None,
     tmax_interm: np.ndarray | None = None,
+    noise_std: np.ndarray | None = None,
 ) -> SensorFaults:
     n = 5
     return SensorFaults(
@@ -77,7 +117,7 @@ def _quiet_sfaults(
         b=np.zeros((lt, n)) if b is None else b,
         isIntermit=np.zeros(n) if is_intermit is None else is_intermit,
         tmaxInterm=np.zeros(n) if tmax_interm is None else tmax_interm,
-        noise_std=np.zeros(n),
+        noise_std=np.zeros(n) if noise_std is None else noise_std,
     )
 
 
@@ -85,6 +125,9 @@ def _gold_settings(
     t: np.ndarray,
     *,
     sp_profile: np.ndarray | None = None,
+    nic: int = 4,
+    mode_1b: np.ndarray | None = None,
+    exogenous=None,
 ) -> Settings:
     lt = len(t)
     if sp_profile is None:
@@ -94,23 +137,29 @@ def _gold_settings(
             np.full(lt, 0.5),
             np.full(lt, 3000.0),
         ])
-    return Settings(
+    settings = Settings(
         ti=float(t[0]),
         tf=float(t[-1]),
         dt=float(t[1] - t[0]) if lt > 1 else 30.0,
         sv0=_GOLD_SV0.copy(),
         u0=_GOLD_U0.copy(),
-        mode_1b=np.array([1, 1, 1, 1]),
+        mode_1b=np.array([1, 1, 1, 1]) if mode_1b is None else mode_1b,
         pvindex_1b=np.array([1, 2, 3, 4]),
         uindex_1b=np.array([4, 5, 6, 1]),
         sp1=60.4 + 273.15,
         sp2=50.0 + 273.15,
         sp3=0.5,
         sp4=3000.0,
-        nic=4,
+        nic=nic,
         use_demo_schedules=False,
         sp_profile=sp_profile,
     )
+    if exogenous is not None:
+        # S09 (and similar): custom load-disturbance profile. Instance
+        # attribute shadows the dataclass method; simulation calls
+        # ``settings.exogenous(t)``.
+        settings.exogenous = exogenous
+    return settings
 
 
 def _gold_armax() -> ARMAX:
@@ -160,7 +209,14 @@ class GoldBundle:
 
 
 def build_gold_bundle(scenario_id: str, t: np.ndarray) -> GoldBundle:
-    """Build config blocks for one gold scenario on time grid ``t``."""
+    """Build config blocks for one gold scenario on time grid ``t``.
+
+    S00–S07: golden suite overrides (see Octave ``scenarios/GOLD_SCENARIOS.md``).
+    S08–S15: extended set — mirrors the override blocks in the Octave scenario
+    files ``S08_*.m`` … ``S15_*.m`` one-for-one (same profiles, same time base,
+    ``nic=1``; S09/S15 take loop 4 to MANUAL with the oil order driven by the
+    ARMAX exogenous channel).
+    """
     sid = scenario_id.upper()
     if sid not in SCENARIO_IDS:
         raise ValueError(f"unknown gold scenario {scenario_id!r}; expected one of {SCENARIO_IDS}")
@@ -172,6 +228,8 @@ def build_gold_bundle(scenario_id: str, t: np.ndarray) -> GoldBundle:
     def H(x: np.ndarray, _h0: float = 0.5) -> np.ndarray:
         return np.heaviside(x, 0.5)
 
+    tf, dt, nic = SCENARIO_TIMEBASE[sid]
+
     pfaults = _legacy_pfaults()
     sfaults = _quiet_sfaults(lt)
     vfaults = _gold_vfaults()
@@ -181,6 +239,9 @@ def build_gold_bundle(scenario_id: str, t: np.ndarray) -> GoldBundle:
         np.full(lt, 0.5),
         np.full(lt, 3000.0),
     ])
+    mode_1b = np.array([1, 1, 1, 1])
+    armax = _gold_armax()
+    exogenous: Any = None
 
     if sid == "S01":
         pfaults = _legacy_pfaults(
@@ -255,13 +316,115 @@ def build_gold_bundle(scenario_id: str, t: np.ndarray) -> GoldBundle:
             H(t - 3 * T_DAY) - H(t - 4 * T_DAY)
         )
         sfaults = _quiet_sfaults(lt, b=b)
+    elif sid == "S08":
+        # G1: measurement noise on all five sensors (user_settings magnitudes).
+        sfaults = _quiet_sfaults(
+            lt,
+            noise_std=np.array([0.1, 0.1, 5e-3, 5.0, 300.0]),
+        )
+    elif sid == "S09":
+        # G2: ARMAX load disturbances + Foil loop in MANUAL. Deterministic
+        # (unoise_std = 0): oil order 40 -> 45 % at day 2 -> 40 % at day 4,
+        # Tmet daily sine +-3 K.
+        mode_1b = np.array([1, 1, 1, 0])
+        armax = _gold_armax()
+        armax.eta = np.array([1.0, 1.0, 1.0, 0.0, 0.0, 0.0])
+
+        def _exogenous_s09(t_: np.ndarray) -> np.ndarray:
+            d = np.tile(_GOLD_U0, (len(t_), 1))
+            d[:, 0] = 40.0 + 5.0 * H(t_ - 2 * T_DAY) - 5.0 * H(t_ - 4 * T_DAY)
+            d[:, 1] = d[:, 1] + 3.0 * np.sin(2.0 * np.pi / T_DAY * t_)
+            return d
+
+        exogenous = _exogenous_s09
+    elif sid == "S10":
+        # G3: setpoint steps on the TR, TD and hH loops (servo regime).
+        sp = np.column_stack([
+            (60.4 + 273.15) + 2.0 * (H(t - 1 * T_DAY) - H(t - 3 * T_DAY)),
+            (50.0 + 273.15) + 2.0 * (H(t - 2 * T_DAY) - H(t - 5 * T_DAY)),
+            0.5 + 0.1 * (H(t - 4 * T_DAY) - H(t - 6 * T_DAY)),
+            np.full(lt, 3000.0),
+        ])
+    elif sid == "S11":
+        # G4: fouling sized so the required Qheat (23615*(1+Rf) W) crosses the
+        # 40 kW PID upper bound at Rf > 0.693, i.e. t > 1.155e6 s (~day 13.4);
+        # from then on Qheat is pinned at the bound and TD drifts above SP.
+        pfaults = _legacy_pfaults(
+            fouling=1,
+            foulingpar=np.array([6e-7]),
+        )
+    elif sid == "S12":
+        # G5: stiction variants — valve 1 (H) no-offset slip (S=J=2) and
+        # valve 2 (oil) pure deadband (S=3, J=0), forced by hH/Foil SP steps.
+        sp[:, 2] = 0.5 + 0.1 * (H(t - 1 * T_DAY) - H(t - 4 * T_DAY))
+        sp[:, 3] = (
+            3000.0
+            + 100.0 * H(t - 1 * T_DAY)
+            - 100.0 * H(t - 4 * T_DAY)
+        )
+        vfaults = _gold_vfaults(
+            S=np.array([2.0, 3.0]),
+            J=np.array([2.0, 0.0]),
+        )
+    elif sid == "S13":
+        # G7: intermittence masks on three (sensor, fault) pairs: TR scaling
+        # (day 1-4), TD drift (from day 2), Foil stuck (from day 5). Masks are
+        # RNG-dependent: fingerprint-level parity only.
+        a = np.ones((lt, 5))
+        b = np.zeros((lt, 5))
+        sig = np.ones((lt, 5))
+        a[:, 0] = 1.0 + 0.05 * (H(t - 1 * T_DAY) - H(t - 4 * T_DAY))
+        b[:, 1] = 5e-6 * (t - 2 * T_DAY) * H(t - 2 * T_DAY)
+        a[:, 3] = 1.0 - H(t - 5 * T_DAY)
+        b[:, 3] = 3000.0 * H(t - 5 * T_DAY)
+        sfaults = _quiet_sfaults(
+            lt,
+            signal=sig,
+            a=a,
+            b=b,
+            is_intermit=np.array([1.0, 1.0, 0.0, 1.0, 0.0]),
+            tmax_interm=np.array([3600.0, 3600.0, 0.0, 3600.0, 0.0]),
+        )
+    elif sid == "S14":
+        # G6: one month of clogging with ~14 cleanings and new-filter
+        # variability. filter_std = 6e10 ~ 1 % relative jitter of the
+        # clean-filter constants (the shipped user_settings 5e-15 is
+        # numerically nil — see Octave S14 header for the scale analysis).
+        pfaults = _legacy_pfaults(
+            clog_fraction=5.95e-7,
+            DPclean=1e5,
+            filter_std=6e10,
+        )
+    elif sid == "S15":
+        # G8: six-month degradation accumulation — clogging (~84 cleanings),
+        # fouling e=3e-7 (Qheat pins at 40 kW from ~day 27), catalyst loss
+        # 0.9. Foil loop in MANUAL with a constant 40 % oil order (ARMAX
+        # pass-through): removes the discretely unstable loop at PID period
+        # 300 s and covers the MANUAL/ARMAX regime at long horizon.
+        mode_1b = np.array([1, 1, 1, 0])
+        armax = _gold_armax()
+        armax.eta = np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        pfaults = _legacy_pfaults(
+            clog_fraction=5.95e-7,
+            DPclean=1e5,
+            filter_std=0.0,
+            ratio_robs_r=0.9,
+            fouling=1,
+            foulingpar=np.array([3e-7]),
+        )
 
     return GoldBundle(
-        settings=_gold_settings(t, sp_profile=sp),
+        settings=_gold_settings(
+            t,
+            sp_profile=sp,
+            nic=nic,
+            mode_1b=mode_1b,
+            exogenous=exogenous,
+        ),
         pfaults=pfaults,
         sfaults=sfaults,
         vfaults=vfaults,
-        armax=_gold_armax(),
+        armax=armax,
         pid=_gold_pid(),
     )
 
@@ -271,12 +434,21 @@ def run_gold_scenario(
     *,
     seed: int = 42,
     npoints: int | None = None,
-    tf: float = T_WEEK,
-    dt: float = 30.0,
+    tf: float | None = None,
+    dt: float | None = None,
     outdir: str | Path | None = None,
     verbose: bool = True,
 ) -> Results:
-    """Run one gold scenario; optionally write Parquet under ``outdir``."""
+    """Run one gold scenario; optionally write Parquet under ``outdir``.
+
+    ``tf``/``dt`` default to the per-scenario time base (``SCENARIO_TIMEBASE``);
+    explicit values override it (e.g. SMOKE truncation via ``npoints``).
+    """
+    tf_def, dt_def, _nic = SCENARIO_TIMEBASE[scenario_id.upper()]
+    if tf is None:
+        tf = tf_def
+    if dt is None:
+        dt = dt_def
     t = _time_grid(tf=tf, dt=dt, npoints=npoints)
     bundle = build_gold_bundle(scenario_id, t)
     results = run_with(

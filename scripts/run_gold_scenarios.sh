@@ -16,18 +16,18 @@ cd "$ROOT"
 JOBS="${JOBS:-4}"
 BD_NPOINTS="${BD_NPOINTS:-}"
 BD_TF="${BD_TF:-}"
-BD_DT="${BD_DT:-30}"
+BD_DT="${BD_DT:-}"
 BD_SEED="${BD_SEED:-42}"
 BD_OUTDIR="${BD_OUTDIR:-data/results_py}"
 
 if [[ $# -eq 1 && "$1" == "SMOKE" ]]; then
-  SCENARIOS=(S00 S01 S02 S03 S04 S05 S06 S07)
+  SCENARIOS=(S00 S01 S02 S03 S04 S05 S06 S07 S08 S09 S10 S11 S12 S13 S14 S15)
   BD_NPOINTS="${BD_NPOINTS:-100}"
   echo "SMOKE mode: BD_NPOINTS=${BD_NPOINTS}"
 elif [[ $# -gt 0 ]]; then
   SCENARIOS=("$@")
 else
-  SCENARIOS=(S00 S01 S02 S03 S04 S05 S06 S07)
+  SCENARIOS=(S00 S01 S02 S03 S04 S05 S06 S07 S08 S09 S10 S11 S12 S13 S14 S15)
 fi
 
 mkdir -p "${BD_OUTDIR}" logs
@@ -57,13 +57,14 @@ fi
 extra_args=()
 [[ -n "${BD_NPOINTS}" ]] && extra_args+=(--npoints "${BD_NPOINTS}")
 [[ -n "${BD_TF}" ]] && extra_args+=(--tf "${BD_TF}")
+[[ -n "${BD_DT}" ]] && extra_args+=(--dt "${BD_DT}")
 
 run_one() {
   local id="$1"
   local log="${LOG_DIR}/${id}.log"
   {
     echo "=== ${id} $(date -Iseconds) host=$(hostname -s 2>/dev/null || hostname) ==="
-    "${PY[@]}" "${id}" --outdir "${BD_OUTDIR}" --seed "${BD_SEED}" --dt "${BD_DT}" \
+    "${PY[@]}" "${id}" --outdir "${BD_OUTDIR}" --seed "${BD_SEED}" \
       "${extra_args[@]}"
     echo "OK ${id}"
   } 2>&1 | tee "${log}"
@@ -95,7 +96,8 @@ if command -v parallel >/dev/null 2>&1 && [[ "${JOBS}" -gt 1 && ${#SCENARIOS[@]}
        args=();
        [[ -n "'"${BD_NPOINTS}"'" ]] && args+=(--npoints "'"${BD_NPOINTS}"'");
        [[ -n "'"${BD_TF}"'" ]] && args+=(--tf "'"${BD_TF}"'");
-       '"${PY[*]}"' "${id}" --outdir "'"${BD_OUTDIR}"'" --seed "'"${BD_SEED}"'" --dt "'"${BD_DT}"'" "${args[@]}";
+       [[ -n "'"${BD_DT}"'" ]] && args+=(--dt "'"${BD_DT}"'");
+       '"${PY[*]}"' "${id}" --outdir "'"${BD_OUTDIR}"'" --seed "'"${BD_SEED}"'" "${args[@]}";
        echo "OK ${id}";
      } 2>&1 | tee "${log}"'
 else

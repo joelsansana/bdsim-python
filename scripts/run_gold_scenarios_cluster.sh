@@ -21,7 +21,7 @@ mkdir -p data/results_py logs
 
 BD_NPOINTS="${BD_NPOINTS:-}"
 BD_TF="${BD_TF:-}"
-BD_DT="${BD_DT:-30}"
+BD_DT="${BD_DT:-}"
 BD_SEED="${BD_SEED:-42}"
 BD_OUTDIR="${BD_OUTDIR:-data/results_py}"
 
@@ -36,13 +36,13 @@ NODES="${NODES:-$CLUSTER_NODES}"
 BD_LOG_SYNC_SEC="${BD_LOG_SYNC_SEC:-$CLUSTER_LOG_SYNC_SEC}"
 
 if [[ $# -eq 1 && "$1" == "SMOKE" ]]; then
-  SCENARIOS=(S00 S01 S02 S03 S04 S05 S06 S07)
+  SCENARIOS=(S00 S01 S02 S03 S04 S05 S06 S07 S08 S09 S10 S11 S12 S13 S14 S15)
   BD_NPOINTS="${BD_NPOINTS:-100}"
   echo "SMOKE mode: BD_NPOINTS=${BD_NPOINTS}"
 elif [[ $# -gt 0 ]]; then
   SCENARIOS=("$@")
 else
-  SCENARIOS=(S00 S01 S02 S03 S04 S05 S06 S07)
+  SCENARIOS=(S00 S01 S02 S03 S04 S05 S06 S07 S08 S09 S10 S11 S12 S13 S14 S15)
 fi
 
 if [[ -n "${BD_LOG_DIR:-}" ]]; then

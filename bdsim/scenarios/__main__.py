@@ -12,12 +12,12 @@ from .gold import SCENARIO_IDS, run_gold_scenario
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m bdsim.scenarios",
-        description="Run Octave-gold scenarios S00–S07 (Parquet export).",
+        description="Run Octave-gold scenarios S00–S15 (Parquet export).",
     )
     parser.add_argument(
         "scenarios",
         nargs="+",
-        help="Scenario id(s) S00–S07, or 'all' / 'SMOKE'.",
+        help="Scenario id(s) S00–S15, or 'all' / 'SMOKE'.",
     )
     parser.add_argument(
         "--outdir",
@@ -31,8 +31,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Truncate like Octave BD_NPOINTS (SMOKE uses 100).",
     )
     parser.add_argument("--seed", type=int, default=42, help="RNG seed (default 42).")
-    parser.add_argument("--tf", type=float, default=None, help="Override final time [s].")
-    parser.add_argument("--dt", type=float, default=30.0, help="Sample interval [s].")
+    parser.add_argument("--tf", type=float, default=None,
+                        help="Override final time [s] (default: per-scenario time base).")
+    parser.add_argument("--dt", type=float, default=None,
+                        help="Sample interval [s] (default: per-scenario time base).")
     parser.add_argument("-q", "--quiet", action="store_true", help="Less driver logging.")
     args = parser.parse_args(argv)
 
@@ -48,7 +50,6 @@ def main(argv: list[str] | None = None) -> int:
         names.append(u)
 
     root = Path(args.outdir)
-    tf = 604800.0 if args.tf is None else args.tf
     for sid in names:
         out = root / sid
         print(f"=== {sid} → {out} (npoints={npoints}) ===")
@@ -56,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
             sid,
             seed=args.seed,
             npoints=npoints,
-            tf=tf,
+            tf=args.tf,
             dt=args.dt,
             outdir=out,
             verbose=not args.quiet,

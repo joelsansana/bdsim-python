@@ -67,3 +67,19 @@ data/
 
 # Local uv cache (optional)
 .uv-cache/
+
+# >>> agents-kit (generated) >>>
+# Managed by agents-kit adapters; this block is rewritten on every run.
+# Local project memory and generated views. Back up .agents/memory/ yourself.
+/.agents/memory/
+/CLAUDE.md
+/.mcp.json
+/.mcp.json.agents-kit-generated
+/.cursor/mcp.json
+/.cursor/mcp.json.agents-kit-generated
+/.cursor/rules/agents-kit-pointer.mdc
+/.cursor/rules/agents-kit-python.mdc
+/.cursor/rules/agents-kit-repos.mdc
+/.cursor/rules/agents-kit-md-docs.mdc
+/.cursor/rules/agents-kit-memory.mdc
+# <<< agents-kit <<<
