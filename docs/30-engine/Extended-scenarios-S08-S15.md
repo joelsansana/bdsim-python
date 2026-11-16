@@ -59,7 +59,30 @@ pair and flags the RNG-dependent scenarios. Assertion gates remain in
 
 ## Results (2026-11-16)
 
-See `data/results_octave/gold_dataset_ext/` (Octave full-horizon runs of S08–S15,
-copied from the BDSIM `results_ref/` suite) vs `data/results_py/S08–S15/`; the
-comparison tables are recorded in `docs/30-engine/Extended-scenarios-S08-S15.md`
-and the progress file of the scenario-review chain.
+Octave gold: full-horizon runs of S08–S15 with the F1-fixed settings, taken from
+the BDSIM `results_ref/` suite into `data/results_octave/gold_dataset_ext/`.
+Python: `data/results_py/S08–S15` (same settings, seed 42). Tools:
+`scripts/compare_gold.py` (RMSE/max|err|/bias per table and column) and
+`scripts/compare_fingerprints.py` (statistics for the RNG/phase-sensitive cases).
+
+| Scenario | Mode | Key agreement |
+|----------|------|---------------|
+| S09 (det.) | sample-wise | manual oil order RMSE = 0 (exact); Tmet sine 5e-5 °C; Foil 4e-6 kg/h; Qheat RMSE 102 W (σ 1024); TR 0.045 K; TD 0.005 K |
+| S10 (det.) | sample-wise | TR 0.044 K (σ 0.85); TD 0.004 K; compositions 1e-6..1e-5; Foil/lifto ~1e-7 |
+| S11 (det.) | sample-wise | Qheat pin day 13.3809 (gold) vs 13.3785 (py) — 60 s apart over 30 d; Qheat RMSE 31 W (σ 5152); TD end identical 53.501 °C; xR_E 2.4e-6 |
+| S12 (det. + stiction) | sample-wise + fingerprint | comps 1e-6; Foil/lifto 1e-6..1e-5; TR 0.029 K; H-valve stick-slip *phase* drifts (liftH RMSE 1.5 on σ 3.34) — fingerprint: stem zero-cross rate 0.014/0.014, amplitude σ 3.335/3.342 |
+| S08 (RNG) | fingerprint | PV statistics to ~1 %: TR σ 0.1005/0.1050 K, TD σ 0.1006/0.1006 K, Foil σ 6.34/6.26 kg/h, DP σ 299.8/300.6 Pa, means at SP |
+| S13 (RNG) | fingerprint | mask duty 0.641 (gold) / 0.549 (py) — legacy-RNG streams differ as documented; fault machinery verified in both |
+| S14 (RNG draws + det. base) | fingerprint + events | 14 cleanings in BOTH; interval mean 177798 (gold) / 177822 (py) s (0.13 %); first two events identical; drift ≤ 1680 s by event 10 from the RNG-dependent new-filter K4F draws (per design) |
+| S15 (det. + events) | sample-wise + events | 6 months: 79 cleanings in BOTH with **identical event times** (max diff 0 s); Qheat pin day 27.4 both; TD RMSE 0.0097 K (σ 2.5), end 57.284/57.266 °C; Qheat RMSE 20 W (σ 3852); xR_E RMSE 2.3e-6, end 0.4146 both; lifto RMSE = 0 (manual channel bit-exact); gold loads fed (Tmet 50 °C, Fmet 657 kg/h) |
+
+Verdict: every deterministic extended scenario agrees within the
+`Port_execution.md` solver-drift tolerance; the RNG-dependent ones agree at the
+fingerprint level exactly as the §5 strategy prescribes. S12's stick-slip stem
+channels are the only phase-sensitive signals and are handled as fingerprints.
+
+The old suite S00–S07 was additionally re-verified against the stored
+`gold_dataset_1w` (same tool): compositions ~1e-3 on σ 0.2, thermal channels
+< 0.01 K; the heavy-phase split columns (xH_M/xH_G) show a ~0.01 bias from the
+NN-split sensitivity and stay inside the existing abs-floor policy of
+`tests/test_gold_parity.py`.
