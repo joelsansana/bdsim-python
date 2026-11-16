@@ -41,6 +41,15 @@ random streams. Octave legacy `rand`/`randn` ≠ NumPy at the same seed, so:
 - S09, S10, S11, S12 and S15 are fully deterministic and must agree with Octave
   gold to the usual solver-drift tolerance (RK45 vs `lsode`).
 
+## F1 — loads must pass through
+
+The golden S00 defaults zero the whole ARMAX row, but u2 (Tmet) and u3 (Fmet) are
+*pure loads* computed as `u = eta·d` — with `eta = 0` the plant receives **no
+methanol feed** and the composition collapses to pure TG within a week (finding
+F1 in the Octave repo's `docs/scenario_coverage.md`). The extended scenarios set
+`armax.eta = [0,1,1,0,0,0]` (S08, S10–S14) / `[1,1,1,0,0,0]` (S09, S15 — the
+first slot passes the manual oil order through). Deterministic either way.
+
 ## Comparison tool
 
 `scripts/compare_gold.py` (this repo) prints per-table, per-column

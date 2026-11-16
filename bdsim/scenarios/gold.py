@@ -318,6 +318,7 @@ def build_gold_bundle(scenario_id: str, t: np.ndarray) -> GoldBundle:
         sfaults = _quiet_sfaults(lt, b=b)
     elif sid == "S08":
         # G1: measurement noise on all five sensors (user_settings magnitudes).
+        armax.eta = np.array([0.0, 1.0, 1.0, 0.0, 0.0, 0.0])  # F1: feed loads
         sfaults = _quiet_sfaults(
             lt,
             noise_std=np.array([0.1, 0.1, 5e-3, 5.0, 300.0]),
@@ -339,6 +340,7 @@ def build_gold_bundle(scenario_id: str, t: np.ndarray) -> GoldBundle:
         exogenous = _exogenous_s09
     elif sid == "S10":
         # G3: setpoint steps on the TR, TD and hH loops (servo regime).
+        armax.eta = np.array([0.0, 1.0, 1.0, 0.0, 0.0, 0.0])  # F1: feed loads
         sp = np.column_stack([
             (60.4 + 273.15) + 2.0 * (H(t - 1 * T_DAY) - H(t - 3 * T_DAY)),
             (50.0 + 273.15) + 2.0 * (H(t - 2 * T_DAY) - H(t - 5 * T_DAY)),
@@ -349,6 +351,7 @@ def build_gold_bundle(scenario_id: str, t: np.ndarray) -> GoldBundle:
         # G4: fouling sized so the required Qheat (23615*(1+Rf) W) crosses the
         # 40 kW PID upper bound at Rf > 0.693, i.e. t > 1.155e6 s (~day 13.4);
         # from then on Qheat is pinned at the bound and TD drifts above SP.
+        armax.eta = np.array([0.0, 1.0, 1.0, 0.0, 0.0, 0.0])  # F1: feed loads
         pfaults = _legacy_pfaults(
             fouling=1,
             foulingpar=np.array([6e-7]),
@@ -362,6 +365,7 @@ def build_gold_bundle(scenario_id: str, t: np.ndarray) -> GoldBundle:
             + 100.0 * H(t - 1 * T_DAY)
             - 100.0 * H(t - 4 * T_DAY)
         )
+        armax.eta = np.array([0.0, 1.0, 1.0, 0.0, 0.0, 0.0])  # F1: feed loads
         vfaults = _gold_vfaults(
             S=np.array([2.0, 3.0]),
             J=np.array([2.0, 0.0]),
@@ -377,6 +381,7 @@ def build_gold_bundle(scenario_id: str, t: np.ndarray) -> GoldBundle:
         b[:, 1] = 5e-6 * (t - 2 * T_DAY) * H(t - 2 * T_DAY)
         a[:, 3] = 1.0 - H(t - 5 * T_DAY)
         b[:, 3] = 3000.0 * H(t - 5 * T_DAY)
+        armax.eta = np.array([0.0, 1.0, 1.0, 0.0, 0.0, 0.0])  # F1: feed loads
         sfaults = _quiet_sfaults(
             lt,
             signal=sig,
@@ -390,6 +395,7 @@ def build_gold_bundle(scenario_id: str, t: np.ndarray) -> GoldBundle:
         # variability. filter_std = 6e10 ~ 1 % relative jitter of the
         # clean-filter constants (the shipped user_settings 5e-15 is
         # numerically nil — see Octave S14 header for the scale analysis).
+        armax.eta = np.array([0.0, 1.0, 1.0, 0.0, 0.0, 0.0])  # F1: feed loads
         pfaults = _legacy_pfaults(
             clog_fraction=5.95e-7,
             DPclean=1e5,
@@ -403,7 +409,7 @@ def build_gold_bundle(scenario_id: str, t: np.ndarray) -> GoldBundle:
         # 300 s and covers the MANUAL/ARMAX regime at long horizon.
         mode_1b = np.array([1, 1, 1, 0])
         armax = _gold_armax()
-        armax.eta = np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        armax.eta = np.array([1.0, 1.0, 1.0, 0.0, 0.0, 0.0])  # F1: oil order + loads pass d through
         pfaults = _legacy_pfaults(
             clog_fraction=5.95e-7,
             DPclean=1e5,
