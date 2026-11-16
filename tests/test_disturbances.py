@@ -192,11 +192,11 @@ def test_default_fingerprint_unchanged_from_layer25_baseline() -> None:
         spectrum_enabled=False,
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    assert _fingerprint(res.sv) == "6f61eb532b3284ee", (
-        f"Default sv fingerprint drifted: {_fingerprint(res.sv)} != 6f61eb532b3284ee"
+    assert _fingerprint(res.sv) == "ad3d55bfa4e04260", (
+        f"Default sv fingerprint drifted: {_fingerprint(res.sv)} != ad3d55bfa4e04260"
     )
-    assert _fingerprint(res.pv) == "72a3d070452c8fb8"
-    assert _fingerprint(res.uv) == "53a404a4b3d7a63c"
+    assert _fingerprint(res.pv) == "fbdcb0d4e7d651f2"
+    assert _fingerprint(res.uv) == "6c1822266cecac2b"
 
 
 @pytest.mark.fingerprint_reference_stack
@@ -220,8 +220,8 @@ def test_active_disturbance_produces_new_pinned_fingerprint() -> None:
         cw_p_drift_pa_per_h=-100.0,
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    assert _fingerprint(res.sv) == "e2a29849064d915e", (
-        f"Active-disturbance sv fingerprint drifted: {_fingerprint(res.sv)} != e2a29849064d915e"
+    assert _fingerprint(res.sv) == "9b10222473744e7f", (
+        f"Active-disturbance sv fingerprint drifted: {_fingerprint(res.sv)} != 9b10222473744e7f"
     )
-    assert _fingerprint(res.pv) == "f33797fd634514df"
-    assert _fingerprint(res.uv) == "f0187880968c4735"
+    assert _fingerprint(res.pv) == "1bb38dc9c8681f97"
+    assert _fingerprint(res.uv) == "2e5a1b8883b95035"

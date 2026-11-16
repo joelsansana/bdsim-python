@@ -1040,12 +1040,28 @@ class LiveSimulator:
         self._u0 = u0
         self._u0_kg_h = settings.u0.copy()                 # cached for control writes
 
-        # --- setpoint profile (matches legacy)
-        sp = np.zeros((self._lt, 4))
-        sp[:, 0] = settings.live_sp1
-        sp[:, 1] = settings.live_sp2
-        sp[:, 2] = settings.live_sp3
-        sp[:, 3] = settings.live_sp4 + 100.0 * np.heaviside(self._t - 5000.0, 1.0)
+        # --- setpoint profile (matches legacy; gold disables demo schedules)
+        lt = self._lt
+        t = self._t
+        sp = np.zeros((lt, 4))
+        if (
+            not settings.use_demo_schedules
+            and settings.sp_profile is not None
+        ):
+            sp_prof = np.asarray(settings.sp_profile, dtype=float)
+            if sp_prof.shape != (lt, 4):
+                raise ValueError(
+                    f"settings.sp_profile: expected shape ({lt}, 4); "
+                    f"got {sp_prof.shape}"
+                )
+            sp[:, :] = sp_prof
+        else:
+            sp[:, 0] = settings.live_sp1
+            sp[:, 1] = settings.live_sp2
+            sp[:, 2] = settings.live_sp3
+            sp[:, 3] = settings.live_sp4
+            if settings.use_demo_schedules:
+                sp[:, 3] = sp[:, 3] + 100.0 * np.heaviside(t - 5000.0, 1.0)
         sp[:, 3] = sp[:, 3] / 3600.0
         self._sp = sp
 
@@ -1055,16 +1071,41 @@ class LiveSimulator:
         pid.upper_bound = pid.upper_bound.copy()
         pid.lower_bound = pid.lower_bound.copy()
 
-        # --- sensor fault pre-allocation (matches legacy)
-        sfaults.b = np.zeros((self._lt, sfaults.nsensors))
-        sfaults.b[:, 1] = 5e-6 * (self._t - 100000.0) * np.heaviside(self._t - 100000.0, 1.0)
-        sfaults.b[:, 4] = 5e3 * (np.heaviside(self._t - 60000.0, 1.0)
-                                - np.heaviside(self._t - 80000.0, 1.0))
-        sfaults.a = np.ones((self._lt, sfaults.nsensors))
-        sfaults.signal = np.ones((self._lt, sfaults.nsensors))
+        # --- sensor fault pre-allocation
+        nsens = sfaults.nsensors
+        if settings.use_demo_schedules:
+            sfaults.b = np.zeros((lt, nsens))
+            sfaults.b[:, 1] = 5e-6 * (t - 100000.0) * np.heaviside(t - 100000.0, 1.0)
+            sfaults.b[:, 4] = 5e3 * (np.heaviside(t - 60000.0, 1.0)
+                                    - np.heaviside(t - 80000.0, 1.0))
+            sfaults.a = np.ones((lt, nsens))
+            sfaults.signal = np.ones((lt, nsens))
+        else:
+            def _expand_calendar(arr, fill: float) -> np.ndarray:
+                if arr is None:
+                    return np.full((lt, nsens), fill)
+                a = np.asarray(arr, dtype=float)
+                if a.ndim == 1:
+                    return np.tile(a.reshape(1, -1), (lt, 1))
+                if a.shape != (lt, nsens):
+                    raise ValueError(
+                        f"sfaults calendar: expected shape ({lt}, {nsens}); "
+                        f"got {a.shape}"
+                    )
+                return a.copy()
+
+            sfaults.signal = _expand_calendar(sfaults.signal, 1.0)
+            sfaults.a = _expand_calendar(sfaults.a, 1.0)
+            sfaults.b = _expand_calendar(sfaults.b, 0.0)
+
         sfaults.signal, sfaults.a, sfaults.b = _intermittence(
-            self._t, sfaults.signal, sfaults.a, sfaults.b, sfaults
+            t, sfaults.signal, sfaults.a, sfaults.b, sfaults
         )
+        sfaults.b = sfaults.b.copy()
+        sfaults.b[:, 3] = sfaults.b[:, 3] / 3600.0
+        if not settings.use_demo_schedules:
+            sfaults.noise_std = sfaults.noise_std.copy()
+            sfaults.noise_std[3] = sfaults.noise_std[3] / 3600.0
 
         # --- ARMAX AUTO-mode forcing
         mode = settings.mode_1b.astype(bool)

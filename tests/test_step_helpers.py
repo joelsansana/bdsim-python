@@ -202,7 +202,7 @@ def _make_pid_states() -> list[_PIDState]:
 
 
 def test_apply_controller_step_skips_off_tick() -> None:
-    """When ``(i - 1) % nic != 0``, no PID updates happen."""
+    """When ``i % nic != 0``, no PID updates happen."""
     u = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     pvAUTO = np.array([1.0, 2.0, 3.0])
     sp = np.zeros((10, 4))
@@ -216,7 +216,7 @@ def test_apply_controller_step_skips_off_tick() -> None:
     u_before = u.copy()
 
     apply_controller_step(
-        i=2,                                       # (2-1) % 4 = 1 → off-tick
+        i=1,                                       # 1 % 4 = 1 → off-tick (Octave-aligned)
         u=u, pvAUTO=pvAUTO, sp=sp, mode_1b=mode_1b,
         uindexAUTO=uindexAUTO, pid_states=pid_states, nic=4,
     )
@@ -238,7 +238,7 @@ def test_apply_controller_step_updates_on_tick() -> None:
     pid_states = _make_pid_states()
 
     apply_controller_step(
-        i=1,                                       # (1-1) % 4 = 0 → on-tick
+        i=4,                                       # 4 % 4 = 0 → first on-tick
         u=u, pvAUTO=pvAUTO, sp=sp, mode_1b=mode_1b,
         uindexAUTO=uindexAUTO, pid_states=pid_states, nic=4,
     )
@@ -252,7 +252,7 @@ def test_apply_controller_step_updates_on_tick() -> None:
 
 
 def test_apply_controller_step_respects_nic() -> None:
-    """Only steps where ``(i - 1) % nic == 0`` trigger updates."""
+    """Only steps where ``i % nic == 0`` trigger updates."""
     u = np.zeros(6)
     pvAUTO = np.array([300.0, 0.4, 0.5])
     sp = np.zeros((10, 4))
@@ -264,16 +264,24 @@ def test_apply_controller_step_respects_nic() -> None:
     uindexAUTO = np.array([3, 0, 1])
     pid_states = _make_pid_states()
 
-    # Step 1: on-tick → u updates
+    # Step 1: off-tick (Octave-aligned) → u stays zero
     apply_controller_step(
         i=1, u=u, pvAUTO=pvAUTO, sp=sp, mode_1b=mode_1b,
         uindexAUTO=uindexAUTO, pid_states=pid_states, nic=4,
     )
-    u_after_first = u.copy()
+    np.testing.assert_array_equal(u, np.zeros(6))
 
-    # Step 2: off-tick → u unchanged
+    # Step 4: first on-tick → u updates
     apply_controller_step(
-        i=2, u=u, pvAUTO=pvAUTO, sp=sp, mode_1b=mode_1b,
+        i=4, u=u, pvAUTO=pvAUTO, sp=sp, mode_1b=mode_1b,
+        uindexAUTO=uindexAUTO, pid_states=pid_states, nic=4,
+    )
+    u_after_first = u.copy()
+    assert not np.array_equal(u_after_first, np.zeros(6))
+
+    # Step 5: off-tick → u unchanged
+    apply_controller_step(
+        i=5, u=u, pvAUTO=pvAUTO, sp=sp, mode_1b=mode_1b,
         uindexAUTO=uindexAUTO, pid_states=pid_states, nic=4,
     )
     np.testing.assert_array_equal(u, u_after_first)

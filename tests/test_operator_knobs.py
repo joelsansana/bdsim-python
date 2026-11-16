@@ -89,9 +89,9 @@ def test_zero_amplitude_with_no_overlays_is_byte_identical_to_layer25() -> None:
         spectrum_enabled=False,
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    assert _fingerprint(res.sv) == "6f61eb532b3284ee"
-    assert _fingerprint(res.pv) == "72a3d070452c8fb8"
-    assert _fingerprint(res.uv) == "53a404a4b3d7a63c"
+    assert _fingerprint(res.sv) == "ad3d55bfa4e04260"
+    assert _fingerprint(res.pv) == "fbdcb0d4e7d651f2"
+    assert _fingerprint(res.uv) == "6c1822266cecac2b"
 
 
 # --------------------------------------------------------------------------- #
@@ -323,9 +323,9 @@ def test_active_ambient_overlay_pinned_fingerprint() -> None:
         live_cw_p_drift_pa_per_h=-50.0,                      # pumps slowly wearing
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    assert _fingerprint(res.sv) == "c27724c42077f1ed"
-    assert _fingerprint(res.pv) == "1183018643fd28a4"
-    assert _fingerprint(res.uv) == "d427cf8374f50760"
+    assert _fingerprint(res.sv) == "d0d947b3f483bae1"
+    assert _fingerprint(res.pv) == "fdc50ab452ddabdc"
+    assert _fingerprint(res.uv) == "5795a631dfb20aab"
 
 
 @pytestmark_reference
@@ -359,6 +359,6 @@ def test_clear_overlay_after_use_restores_cleared_state() -> None:
     assert _fingerprint(res_used.sv) != _fingerprint(res_cleared.sv), (
         "Overlay should shift the trajectory away from the cleared baseline"
     )
-    assert _fingerprint(res_cleared.sv) == "4a36361ee56227e0"
-    assert _fingerprint(res_cleared.pv) == "bcae90e50da81d3d"
-    assert _fingerprint(res_cleared.uv) == "eea941a957ff250b"
+    assert _fingerprint(res_cleared.sv) == "69c4945f505f5754"
+    assert _fingerprint(res_cleared.pv) == "0aa271dd37d53842"
+    assert _fingerprint(res_cleared.uv) == "7f2c23cf59a3c706"

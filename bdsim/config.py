@@ -542,7 +542,14 @@ class ProcessFaults:
         """
         # Filter physics
         _check_nonneg("clog_fraction", self.clog_fraction)
-        _check_positive("DPclean", self.DPclean)
+        # DPclean may be +Inf (gold healthy scenarios: no cleaning).
+        if not isinstance(self.DPclean, (int, float, np.integer, np.floating)):
+            raise TypeError(
+                f"DPclean: expected a real number, got {type(self.DPclean).__name__}"
+            )
+        _dp = float(self.DPclean)
+        if math.isnan(_dp) or _dp <= 0.0:
+            raise _err("DPclean", f"must be positive or +Inf; got {self.DPclean!r}")
         _check_nonneg("filter_std", self.filter_std)
         _check_positive("ratio_robs_r", self.ratio_robs_r)
         _check_in_set("fouling", self.fouling, (0, 1))
@@ -721,7 +728,7 @@ class SensorFaults:
             raise _err("nsensors", f"must be >= 1; got {self.nsensors}")
         n = int(self.nsensors)
 
-        # signal / a / b: shape-checked only when provided.
+        # signal / a / b: templates (n,) or full calendars (lt, n).
         for name in ("signal", "a", "b"):
             v = getattr(self, name)
             if v is not None:
@@ -730,7 +737,16 @@ class SensorFaults:
                         f"{name}: expected np.ndarray or None, "
                         f"got {type(v).__name__}"
                     )
-                _check_shape(name, v, (n,))
+                if v.ndim == 1:
+                    _check_shape(name, v, (n,))
+                elif v.ndim == 2:
+                    if v.shape[1] != n:
+                        raise _err(
+                            name,
+                            f"expected shape (lt, {n}); got {v.shape}",
+                        )
+                else:
+                    raise _err(name, f"expected 1-D or 2-D array; got ndim={v.ndim}")
                 _check_finite_array(name, v)
 
         # bool signal — must be all 0/1
@@ -961,12 +977,24 @@ class Settings:
         [40.0, 50 + 273.15, 657.0, 60 + 273.15, 23615.0, 28.5]
     ))
 
+    # When True (default), apply the upstream ``user_settings.m`` demo
+    # overlays (Foil SP step, TD drift / DP bias calendars, Tmet sinusoid,
+    # Qheat step). Gold scenarios set this False and supply their own
+    # ``sp_profile`` / ``sfaults`` calendars.
+    use_demo_schedules: bool = True
+
+    # Optional full setpoint profile (lt x 4) in display units:
+    # [TR_K, TD_K, hH_m, Foil_kg_h]. Used when ``use_demo_schedules`` is
+    # False; when None, constant ``sp1..sp4`` are tiled.
+    sp_profile: np.ndarray | None = None
+
     # Disturbance profile (lt x 6). Defaults: Tmet daily sinusoid + Qheat step.
     def exogenous(self, t: np.ndarray) -> np.ndarray:
         u0 = self.u0
         d = np.tile(u0, (len(t), 1))
-        d[:, 1] = d[:, 1] + 3.0 * np.sin(np.pi / (12 * 3600) * t)
-        d[:, 4] = d[:, 4] + 1000.0 * np.heaviside(t - 100000.0, 1.0)
+        if self.use_demo_schedules:
+            d[:, 1] = d[:, 1] + 3.0 * np.sin(np.pi / (12 * 3600) * t)
+            d[:, 4] = d[:, 4] + 1000.0 * np.heaviside(t - 100000.0, 1.0)
         return d
 
     # external disturbances + operator knobs: external disturbance channel (lt x 3).

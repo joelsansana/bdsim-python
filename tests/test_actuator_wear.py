@@ -68,9 +68,9 @@ def test_legacy_72h_fingerprint_preserved_with_no_wear() -> None:
         pump_wear=False, valve_wear=False,                  # actuator wear off
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    assert _fingerprint(res.sv) == "6f61eb532b3284ee"
-    assert _fingerprint(res.pv) == "72a3d070452c8fb8"
-    assert _fingerprint(res.uv) == "53a404a4b3d7a63c"
+    assert _fingerprint(res.sv) == "ad3d55bfa4e04260"
+    assert _fingerprint(res.pv) == "fbdcb0d4e7d651f2"
+    assert _fingerprint(res.uv) == "6c1822266cecac2b"
 
 
 # --------------------------------------------------------------------------- #
@@ -381,9 +381,9 @@ def test_pump_only_72h_fingerprint_pinned() -> None:
         pump_wear_rate_per_h=0.01,
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    assert _fingerprint(res.sv) == "ec13ae081b492068"
-    assert _fingerprint(res.pv) == "91adce03cd80c8c7"
-    assert _fingerprint(res.uv) == "098cd433f67f4e59"
+    assert _fingerprint(res.sv) == "736a80326f63c9c2"
+    assert _fingerprint(res.pv) == "fc29a420d3b1b989"
+    assert _fingerprint(res.uv) == "6865d7d61a799ae1"
 
 
 @pytest.mark.fingerprint_reference_stack
@@ -404,9 +404,9 @@ def test_valve_only_72h_fingerprint_pinned() -> None:
         valve_stiction_rate_pct_per_h=0.05,
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    assert _fingerprint(res.sv) == "d2dcef58708fa86a"
-    assert _fingerprint(res.pv) == "4c3c2a434c26290b"
-    assert _fingerprint(res.uv) == "9badec1ffb4045cb"
+    assert _fingerprint(res.sv) == "56c453e95144688b"
+    assert _fingerprint(res.pv) == "3e8783ba4435a32b"
+    assert _fingerprint(res.uv) == "bf7ff824b336f385"
 
 
 @pytest.mark.fingerprint_reference_stack
@@ -427,9 +427,9 @@ def test_both_wear_72h_fingerprint_pinned() -> None:
         valve_stiction_initial_pct=0.0,
     )
     res = run_with(settings=settings, pfaults=pfaults, seed=42, verbose=False)
-    assert _fingerprint(res.sv) == "d9b8de93fd21725d"
-    assert _fingerprint(res.pv) == "2b9b3518d0dafd94"
-    assert _fingerprint(res.uv) == "0c38a9f26efd832e"
+    assert _fingerprint(res.sv) == "2290bca3cd4ec3f8"
+    assert _fingerprint(res.pv) == "694dab99dbb6e53d"
+    assert _fingerprint(res.uv) == "8231d3c9ce966adb"
 
 
 # --------------------------------------------------------------------------- #
